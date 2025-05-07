@@ -8,7 +8,8 @@ import 'package:path/path.dart';
 import 'package:stock_count/utilis/db_schema.dart';
 
 class SyncManager {
-  static const _baseUrl = AppConfig.baseUrl;
+  // Use a method to get the base URL asynchronously
+  static Future<String> get _baseUrl async => await AppConfig.baseUrl;
   static Future<Database> getDatabase() async {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'stock_count.db');
@@ -90,9 +91,9 @@ class SyncManager {
           'entries': bulkData,
         };
 
+        final baseUrl = await _baseUrl;
         var response = await http.post(
-          Uri.parse(
-              '$_baseUrl/api/method/nex_bridge.api.stock_take.sync_entry'),
+          Uri.parse('$baseUrl/api/method/nex_bridge.api.stock_take.sync_entry'),
           headers: {
             'Content-Type': 'application/json',
             'Authorization': 'Bearer $accessToken',
@@ -169,8 +170,9 @@ class SyncManager {
     try {
       var postData = {'api_call_type': 'get_entries'};
 
+      final baseUrl = await _baseUrl;
       var response = await http.post(
-        Uri.parse('$_baseUrl/api/method/nex_bridge.api.stock_take.sync_entry'),
+        Uri.parse('$baseUrl/api/method/nex_bridge.api.stock_take.sync_entry'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $accessToken',
@@ -328,9 +330,10 @@ class SyncManager {
         "Cleared previous warehouse and company data before fetching new ones.");
 
     try {
+      final baseUrl = await _baseUrl;
       var response = await http.post(
         Uri.parse(
-            '$_baseUrl/api/method/nex_bridge.api.stock_take.get_warehouses_grouped_by_company'),
+            '$baseUrl/api/method/nex_bridge.api.stock_take.get_warehouses_grouped_by_company'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $accessToken',
@@ -388,9 +391,10 @@ class SyncManager {
     print("Cleared previous assigned items before fetching new ones.");
 
     try {
+      final baseUrl = await _baseUrl;
       var response = await http.post(
         Uri.parse(
-            '$_baseUrl/api/method/nex_bridge.api.stock_take.get_user_assigned_items'),
+            '$baseUrl/api/method/nex_bridge.api.stock_take.get_user_assigned_items'),
         headers: {
           'Content-Type': 'application/json',
           'Authorization': 'Bearer $accessToken',

@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:stock_count/config.dart';
 import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/screens/login.dart';
+import 'package:stock_count/screens/setup_dialog.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/sync_manager.dart'; // Import sync manager
 import 'package:hive_flutter/hive_flutter.dart';
@@ -75,8 +77,38 @@ void main() async {
   );
 }
 
-class MyApp extends StatelessWidget {
+class MyApp extends StatefulWidget {
   const MyApp({super.key});
+
+  @override
+  State<MyApp> createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  bool _isConfigured = false;
+  bool _isLoading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _checkConfiguration();
+  }
+
+  Future<void> _checkConfiguration() async {
+    try {
+      final isConfigured = await AppConfig.isConfigured;
+      setState(() {
+        _isConfigured = isConfigured;
+        _isLoading = false;
+      });
+    } catch (e) {
+      print("Error checking configuration: $e");
+      setState(() {
+        _isConfigured = false;
+        _isLoading = false;
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -92,7 +124,48 @@ class MyApp extends StatelessWidget {
         fontFamily: 'Montserrat',
       ),
       debugShowCheckedModeBanner: false,
-      home: const LoginScreen(),
+      home: _isLoading
+          ? const Scaffold(
+              body: Center(
+                child: CircularProgressIndicator(),
+              ),
+            )
+          : _isConfigured
+              ? const LoginScreen()
+              : Builder(
+                  builder: (context) {
+                    // Show setup dialog on first launch
+                    WidgetsBinding.instance.addPostFrameCallback((_) {
+                      showDialog(
+                        context: context,
+                        barrierDismissible: false,
+                        builder: (BuildContext context) {
+                          return const SetupDialog(isFirstLaunch: true);
+                        },
+                      ).then((configured) {
+                        if (configured == true) {
+                          setState(() {
+                            _isConfigured = true;
+                          });
+                        }
+                      });
+                    });
+
+                    // Return a loading screen while dialog is being shown
+                    return const Scaffold(
+                      body: Center(
+                        child: Column(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            CircularProgressIndicator(),
+                            SizedBox(height: 16),
+                            Text('Setting up the app...'),
+                          ],
+                        ),
+                      ),
+                    );
+                  },
+                ),
     );
   }
 }

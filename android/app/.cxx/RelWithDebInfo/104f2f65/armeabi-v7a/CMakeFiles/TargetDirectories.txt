@@ -1,0 +1,2 @@
+/home/sydney/StudioProjects/Stock-Taking-/android/app/.cxx/RelWithDebInfo/104f2f65/armeabi-v7a/CMakeFiles/edit_cache.dir
+/home/sydney/StudioProjects/Stock-Taking-/android/app/.cxx/RelWithDebInfo/104f2f65/armeabi-v7a/CMakeFiles/rebuild_cache.dir

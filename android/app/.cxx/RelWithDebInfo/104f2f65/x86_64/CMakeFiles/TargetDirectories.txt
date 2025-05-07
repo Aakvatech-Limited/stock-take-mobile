@@ -1,0 +1,2 @@
+/home/sydney/StudioProjects/Stock-Taking-/android/app/.cxx/RelWithDebInfo/104f2f65/x86_64/CMakeFiles/edit_cache.dir
+/home/sydney/StudioProjects/Stock-Taking-/android/app/.cxx/RelWithDebInfo/104f2f65/x86_64/CMakeFiles/rebuild_cache.dir

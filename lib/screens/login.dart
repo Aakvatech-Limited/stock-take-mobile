@@ -2,7 +2,9 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:lottie/lottie.dart';
+import 'package:stock_count/config.dart';
 import 'package:stock_count/constants/theme.dart';
+import 'package:stock_count/screens/setup_dialog.dart';
 import 'package:stock_count/utilis/api_service.dart';
 
 class LoginScreen extends StatefulWidget {
@@ -32,6 +34,18 @@ class _LoginScreenState extends State<LoginScreen> {
             statusBarIconBrightness: Brightness.dark),
         child: Scaffold(
           backgroundColor: Colors.white,
+          appBar: AppBar(
+            backgroundColor: Colors.transparent,
+            elevation: 0,
+            actions: [
+              // Settings button
+              IconButton(
+                icon: const Icon(Icons.settings, color: primaryColor),
+                onPressed: () => _showSettingsDialog(context),
+                tooltip: 'App Settings',
+              ),
+            ],
+          ),
           body: SafeArea(
             child: Padding(
               padding: const EdgeInsets.all(16),
@@ -110,6 +124,21 @@ class _LoginScreenState extends State<LoginScreen> {
               ),
       ),
     );
+  }
+
+  // Show settings dialog
+  Future<void> _showSettingsDialog(BuildContext context) async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (BuildContext context) {
+        return const SetupDialog(isFirstLaunch: false);
+      },
+    );
+
+    // If configuration was updated successfully, refresh the app state
+    if (result == true) {
+      setState(() {});
+    }
   }
 
   // Custom back button handler: double-tap to exit

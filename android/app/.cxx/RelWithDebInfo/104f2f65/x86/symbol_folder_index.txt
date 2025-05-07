@@ -1,0 +1,1 @@
+/home/sydney/StudioProjects/Stock-Taking-/build/app/intermediates/cxx/RelWithDebInfo/104f2f65/obj/x86

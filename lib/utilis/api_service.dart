@@ -10,19 +10,26 @@ import 'package:hive/hive.dart';
 import 'package:stock_count/utilis/sync_manager.dart'; // Import SyncManager to fetch user data
 
 class ApiService {
-  static const String _baseUrl = AppConfig.baseUrl;
+  // We'll use methods instead of constants since we need to fetch values asynchronously
+  static Future<String> get _baseUrl async => await AppConfig.baseUrl;
+  static Future<String> get _clientId async => await AppConfig.clientId;
+  static final String _redirectUri = AppConfig.redirectUri;
+  static final String _tokenEndpoint = AppConfig.tokenEndpoint;
+  static final String _userInfoEndpoint = AppConfig.userInfoEndpoint;
 
-  static const String _clientId = AppConfig.clientId;
-  static const String _redirectUri = AppConfig.redirectUri;
-  static const String _authorizationEndpoint = AppConfig.baseUrl;
-  static const String _tokenEndpoint = AppConfig.tokenEndpoint;
-  static const String _userInfoEndpoint = AppConfig.userInfoEndpoint;
+  // Helper method to get authorization endpoint (same as base URL)
+  static Future<String> get _authorizationEndpoint async =>
+      await AppConfig.baseUrl;
 
   // Login with Frappe
   static Future<void> loginWithFrappe(BuildContext context) async {
     try {
+      // Get the dynamic configuration values
+      final baseUrl = await _authorizationEndpoint;
+      final clientId = await _clientId;
+
       final url = Uri.parse(
-          '$_authorizationEndpoint/api/method/frappe.integrations.oauth2.authorize?client_id=$_clientId&response_type=code&scope=all%20openid&redirect_uri=$_redirectUri');
+          '$baseUrl/api/method/frappe.integrations.oauth2.authorize?client_id=$clientId&response_type=code&scope=all%20openid&redirect_uri=$_redirectUri');
 
       final result = await FlutterWebAuth2.authenticate(
         url: url.toString(),
@@ -33,7 +40,7 @@ class ApiService {
 
       if (code != null) {
         final tokenResponse = await http.post(
-          Uri.parse('$_authorizationEndpoint$_tokenEndpoint'),
+          Uri.parse('$baseUrl$_tokenEndpoint'),
           headers: {
             'Content-Type': 'application/x-www-form-urlencoded',
           },
@@ -41,7 +48,7 @@ class ApiService {
             'grant_type': 'authorization_code',
             'code': code,
             'redirect_uri': _redirectUri,
-            'client_id': _clientId,
+            'client_id': clientId,
           },
         );
 
@@ -62,7 +69,7 @@ class ApiService {
 
           // Fetch user information
           final userInfoResponse = await http.get(
-            Uri.parse('$_authorizationEndpoint$_userInfoEndpoint'),
+            Uri.parse('$baseUrl$_userInfoEndpoint'),
             headers: {
               'Authorization': 'Bearer $accessToken',
             },

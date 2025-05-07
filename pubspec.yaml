@@ -32,7 +32,7 @@ dependencies:
     sdk: flutter
   iconify_flutter: ^0.0.5
   http:
-  shared_preferences:
+  shared_preferences: ^2.2.2
   mobile_scanner: ^3.5.6
   camera: ^0.11.0+1
   sqflite:
