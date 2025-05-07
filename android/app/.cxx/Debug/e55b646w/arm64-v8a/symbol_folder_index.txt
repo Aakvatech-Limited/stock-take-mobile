@@ -1,0 +1,1 @@
+/home/sydney/StudioProjects/Stock-Taking-/build/app/intermediates/cxx/Debug/e55b646w/obj/arm64-v8a

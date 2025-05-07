@@ -1,7 +1,7 @@
 import 'dart:ui';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:qr_code_scanner/qr_code_scanner.dart';
+import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
@@ -27,8 +27,7 @@ class CalculatorCard extends StatefulWidget {
 
 class _CalculatorCardState extends State<CalculatorCard>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
-  final GlobalKey qrKey = GlobalKey(debugLabel: 'QR');
-  QRViewController? controller;
+  final MobileScannerController scannerController = MobileScannerController();
   String displayText = '0';
 
   bool isCameraInitialized = false;
@@ -75,7 +74,7 @@ class _CalculatorCardState extends State<CalculatorCard>
 
   @override
   void dispose() {
-    controller?.dispose();
+    scannerController.dispose();
     _animationController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -83,12 +82,10 @@ class _CalculatorCardState extends State<CalculatorCard>
 
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
-    if (controller != null) {
-      if (state == AppLifecycleState.inactive) {
-        controller!.pauseCamera();
-      } else if (state == AppLifecycleState.resumed) {
-        controller!.resumeCamera();
-      }
+    if (state == AppLifecycleState.inactive) {
+      scannerController.stop();
+    } else if (state == AppLifecycleState.resumed) {
+      scannerController.start();
     }
   }
 
@@ -312,19 +309,15 @@ class _CalculatorCardState extends State<CalculatorCard>
       height: 250, // Set a fixed height for the camera view
       child: Stack(
         children: [
-          QRView(
-            key: qrKey,
-            onQRViewCreated: (QRViewController qrController) {
-              controller = qrController;
-              if (!isCameraInitialized) {
-                controller!.scannedDataStream.listen((scanData) {
-                  if (mounted) {
-                    Provider.of<StockTakeNotifier>(context, listen: false)
-                        .setScannedData(scanData.code!);
-                    print("Scanned QR/Barcode: ${scanData.code}");
-                  }
-                });
-                isCameraInitialized = true;
+          MobileScanner(
+            controller: scannerController,
+            onDetect: (BarcodeCapture capture) {
+              final List<Barcode> barcodes = capture.barcodes;
+              if (barcodes.isNotEmpty && mounted) {
+                final String code = barcodes.first.rawValue ?? '';
+                Provider.of<StockTakeNotifier>(context, listen: false)
+                    .setScannedData(code);
+                print("Scanned QR/Barcode: $code");
               }
             },
           ),
@@ -347,7 +340,7 @@ class _CalculatorCardState extends State<CalculatorCard>
                           });
                         },
                         child: Container(
-                          color: Colors.white.withOpacity(0.5),
+                          color: Colors.white.withAlpha(128),
                           padding: const EdgeInsets.all(8),
                           child: Text(
                             'Scanned Data: $scannedData',
@@ -381,7 +374,7 @@ class _CalculatorCardState extends State<CalculatorCard>
         borderRadius: BorderRadius.circular(10),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.1),
+            color: Colors.black.withAlpha(25),
             blurRadius: 10,
           ),
         ],
