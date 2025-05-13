@@ -4,6 +4,33 @@
 
 > **Note:** This app **requires** the [Nex Bridge](https://github.com/Aakvatech-Limited/nex_bridge) application for communication between Flutter and Frappe/ERPNext.
 
+## Quick Start
+
+### Download and Install
+
+You can download the latest APK directly from this repository:
+
+[**Download Stock Take APK**](https://github.com/Aakvatech-Limited/Stock-Taking-/raw/main/Stock%20Take.apk)
+
+After installation, you'll need to configure the app to connect to your Frappe/ERPNext server.
+
+### Configuration
+
+1. When you first launch the app, you'll be prompted to enter:
+   - **Base URL**: Your Frappe/ERPNext server URL (e.g., https://your-frappe-server.com)
+   - **Client ID**: Your OAuth Client ID from Frappe
+
+2. To set up OAuth in Frappe:
+   - Navigate to: Integrations > OAuth Client > New
+   - Fill in the following details:
+     - App Name: Stock Taking App
+     - Skip Authorization: Check this box
+     - Redirect URIs: stockcount://oauth2redirect
+     - Default Redirect URI: stockcount://oauth2redirect
+     - Grant Type: Authorization Code
+     - Response Type: Code
+   - Save the OAuth Client and copy the Client ID to use in the app
+
 ---
 
 ## Features

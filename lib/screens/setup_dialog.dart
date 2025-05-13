@@ -71,7 +71,8 @@ class _SetupDialogState extends State<SetupDialog> {
   }
 
   Future<void> _openFrappeOAuthDocs() async {
-    const url = 'https://frappeframework.com/docs/v14/user/en/api/oauth';
+    const url =
+        'https://docs.frappe.io/framework/user/en/guides/integration/how_to_set_up_oauth';
     final Uri uri = Uri.parse(url);
     if (await canLaunchUrl(uri)) {
       await launchUrl(uri);
