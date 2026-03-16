@@ -10,9 +10,7 @@ import 'package:hive/hive.dart'; // Hive for token management
 
 import 'package:stock_count/components/calculator_card.dart';
 import 'package:stock_count/components/center_box.dart';
-import 'package:stock_count/config.dart';
 import 'package:stock_count/constants/theme.dart';
-import 'package:stock_count/utilis/api_service.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/db_schema.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
@@ -22,11 +20,13 @@ class HomeScreen extends StatefulWidget {
   final int? recountEntryId;
   final String? recountWarehouse;
   final String? countType;
+  final String? scanReferenceMode;
   final Database? database;
 
   const HomeScreen({
     Key? key,
     this.countType,
+    this.scanReferenceMode,
     this.recountEntryId,
     this.recountWarehouse,
     this.database,
@@ -95,6 +95,10 @@ class _HomeScreenState extends State<HomeScreen>
         widget.countType != null) {
       currentEntryId = widget.recountEntryId!;
       selectedWarehouse = widget.recountWarehouse!;
+      context.read<StockTakeNotifier>().setCountType(widget.countType!);
+      context
+          .read<StockTakeNotifier>()
+          .setScanReferenceMode(widget.scanReferenceMode ?? '');
       isCountStarted = true;
       showCountTypeButton = false;
       recountEntry = true;
@@ -165,12 +169,19 @@ class _HomeScreenState extends State<HomeScreen>
     var databasesPath = await getDatabasesPath();
     String path = p.join(databasesPath, 'stock_count.db');
 
-    database = await openDatabase(path, version: 1, onCreate: DBSchema.initDB);
+    database = await openDatabase(
+      path,
+      version: DBSchema.dbVersion,
+      onCreate: DBSchema.initDB,
+      onUpgrade: DBSchema.onUpgrade,
+    );
   }
 
   void startCount() async {
     var authBox = await Hive.openBox('authBox');
     String? userId = authBox.get('userId');
+    final stockTakeNotifier =
+        Provider.of<StockTakeNotifier>(context, listen: false);
 
     String postingDate = DateTime.now().toString().substring(0, 10);
     String postingTime = DateTime.now().toString().substring(11);
@@ -180,6 +191,7 @@ class _HomeScreenState extends State<HomeScreen>
       'warehouse': selectedWarehouse,
       'posting_date': postingDate,
       'posting_time': postingTime,
+      'scan_reference_mode': stockTakeNotifier.scanReferenceMode,
       'stock_count_person': userId
     });
 
@@ -222,7 +234,7 @@ class _HomeScreenState extends State<HomeScreen>
               padding: EdgeInsets.symmetric(horizontal: fixPadding * 2.0),
               child: Center(
                 child: Text(
-                  "Please select the count type Beam or Camera. Then, press the Start Count button to initiate the counting process.",
+                  "Tap Scan Setup to choose scanner source and optional reference mode, then press Start Count.",
                   style: medium15Grey,
                   textAlign: TextAlign.center,
                 ),
@@ -336,20 +348,17 @@ class _HomeScreenState extends State<HomeScreen>
           ),
           floatingActionButton: showCountTypeButton
               ? FloatingActionButton.extended(
-                  onPressed: () => _showSelectionDialog(context),
+                  onPressed: () => _showScanSetupDialog(context),
                   backgroundColor: primaryColor,
                   label: Consumer<StockTakeNotifier>(
                     builder: (context, stockTakeNotifier, child) {
                       return Text(
-                        stockTakeNotifier.countType,
+                        _scanSetupLabel(stockTakeNotifier),
                         style: const TextStyle(color: Colors.white),
                       );
                     },
                   ),
-                  icon: const Icon(
-                    Icons.arrow_drop_down_rounded,
-                    color: Colors.white,
-                  ),
+                  icon: const Icon(Icons.tune, color: Colors.white),
                 )
               : null,
           bottomNavigationBar: BottomNavigationBar(
@@ -396,7 +405,8 @@ class _HomeScreenState extends State<HomeScreen>
               onTap:
                   _toggleDialog, // Close the drawer if you tap on the dimmed area
               child: Container(
-                color: Colors.black.withOpacity(0.5), // Dim the background
+                color:
+                    Colors.black.withValues(alpha: 0.5), // Dim the background
                 width: double.infinity,
                 height: double.infinity,
               ),
@@ -548,27 +558,117 @@ class _HomeScreenState extends State<HomeScreen>
     ];
   }
 
-  void _showSelectionDialog(BuildContext context) {
-    showDialog(
+  void _showScanSetupDialog(BuildContext context) {
+    final notifier = context.read<StockTakeNotifier>();
+    String tempCountType = notifier.countType;
+    String tempReferenceMode = notifier.scanReferenceMode;
+
+    showModalBottomSheet(
       context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
       builder: (BuildContext context) {
-        return Dialog(
-          backgroundColor: whiteColor,
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(10.0),
-          ),
-          child: Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Column(
-              mainAxisSize: MainAxisSize.min,
-              children: <Widget>[
-                const Text('Select Count Type', style: semibold18Primary),
-                const SizedBox(height: 20),
-                dialogOption('Beam'),
-                dialogOption('Camera'),
-              ],
-            ),
-          ),
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            return Container(
+              padding: const EdgeInsets.all(16.0),
+              decoration: const BoxDecoration(
+                color: whiteColor,
+                borderRadius: BorderRadius.vertical(top: Radius.circular(20.0)),
+              ),
+              child: SafeArea(
+                child: Wrap(
+                  children: [
+                    const Center(
+                      child: Text('Scan Setup', style: semibold18Primary),
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('Scanner Source', style: semibold15Black33),
+                    const SizedBox(height: 8),
+                    Row(
+                      children: [
+                        Expanded(
+                          child: _buildSetupOption(
+                            title: 'Beam',
+                            icon: Icons.document_scanner_outlined,
+                            isSelected: tempCountType == 'Beam',
+                            onTap: () =>
+                                setModalState(() => tempCountType = 'Beam'),
+                          ),
+                        ),
+                        const SizedBox(width: 10),
+                        Expanded(
+                          child: _buildSetupOption(
+                            title: 'Camera',
+                            icon: Icons.qr_code_scanner,
+                            isSelected: tempCountType == 'Camera',
+                            onTap: () =>
+                                setModalState(() => tempCountType = 'Camera'),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 14),
+                    const Text('Scan Reference Mode', style: semibold15Black33),
+                    const SizedBox(height: 8),
+                    Wrap(
+                      spacing: 8.0,
+                      runSpacing: 8.0,
+                      children: [
+                        _buildReferenceChip(
+                          label: 'Blank',
+                          value: '',
+                          selectedValue: tempReferenceMode,
+                          onSelected: (value) =>
+                              setModalState(() => tempReferenceMode = value),
+                        ),
+                        _buildReferenceChip(
+                          label: 'Item Code',
+                          value: 'Item Code',
+                          selectedValue: tempReferenceMode,
+                          onSelected: (value) =>
+                              setModalState(() => tempReferenceMode = value),
+                        ),
+                        _buildReferenceChip(
+                          label: 'Batch No',
+                          value: 'Batch No',
+                          selectedValue: tempReferenceMode,
+                          onSelected: (value) =>
+                              setModalState(() => tempReferenceMode = value),
+                        ),
+                        _buildReferenceChip(
+                          label: 'Serial No',
+                          value: 'Serial No',
+                          selectedValue: tempReferenceMode,
+                          onSelected: (value) =>
+                              setModalState(() => tempReferenceMode = value),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 18),
+                    SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton(
+                        onPressed: () {
+                          notifier.setCountType(tempCountType);
+                          notifier.setScanReferenceMode(tempReferenceMode);
+                          Navigator.pop(context);
+                        },
+                        style: ElevatedButton.styleFrom(
+                          backgroundColor: primaryColor,
+                          padding: const EdgeInsets.symmetric(vertical: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                        child: const Text('Apply', style: semibold16White),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
         );
       },
     );
@@ -729,42 +829,73 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Widget dialogOption(String type) {
+  String _scanSetupLabel(StockTakeNotifier notifier) {
+    final scanner =
+        notifier.countType == 'Count type' ? 'Scanner' : notifier.countType;
+    final reference = notifier.scanReferenceMode.isEmpty
+        ? 'Blank'
+        : notifier.scanReferenceMode;
+    return '$scanner • $reference';
+  }
+
+  Widget _buildSetupOption({
+    required String title,
+    required IconData icon,
+    required bool isSelected,
+    required VoidCallback onTap,
+  }) {
     return InkWell(
-      onTap: () {
-        context.read<StockTakeNotifier>().setCountType(type);
-        Navigator.of(context).pop();
-      },
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
       child: Container(
-        margin: const EdgeInsets.symmetric(vertical: 10.0),
-        padding: const EdgeInsets.symmetric(vertical: 12.0, horizontal: 16.0),
+        padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 10),
         decoration: BoxDecoration(
-          color: whiteColor,
-          borderRadius: BorderRadius.circular(10.0),
-          boxShadow: [
-            BoxShadow(
-              color: black3CColor.withOpacity(0.1),
-              blurRadius: 6.0,
-            ),
-          ],
+          color: isSelected ? primaryColor.withValues(alpha: 0.08) : whiteColor,
+          borderRadius: BorderRadius.circular(12),
+          border: Border.all(
+            color:
+                isSelected ? primaryColor : greyColor.withValues(alpha: 0.35),
+          ),
         ),
         child: Row(
-          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Text(type, style: semibold16Black33),
-            Consumer<StockTakeNotifier>(
-              builder: (context, stockTakeNotifier, child) {
-                // Only show the icon if the type is the selected count type
-                return stockTakeNotifier.countType == type
-                    ? const Icon(
-                        Icons.check_circle,
-                        color: primaryColor,
-                      )
-                    : const SizedBox(); // Empty space if not the selected type
-              },
+            Icon(icon,
+                size: 18, color: isSelected ? primaryColor : black33Color),
+            const SizedBox(width: 6),
+            Text(
+              title,
+              style: TextStyle(
+                color: isSelected ? primaryColor : black33Color,
+                fontWeight: FontWeight.w600,
+              ),
             ),
           ],
         ),
+      ),
+    );
+  }
+
+  Widget _buildReferenceChip({
+    required String label,
+    required String value,
+    required String selectedValue,
+    required ValueChanged<String> onSelected,
+  }) {
+    final isSelected = selectedValue == value;
+    return ChoiceChip(
+      label: Text(label),
+      selected: isSelected,
+      onSelected: (_) => onSelected(value),
+      labelStyle: TextStyle(
+        color: isSelected ? whiteColor : black33Color,
+        fontWeight: FontWeight.w600,
+      ),
+      backgroundColor: whiteColor,
+      selectedColor: primaryColor,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(20),
+        side: BorderSide(color: greyColor.withValues(alpha: 0.35)),
       ),
     );
   }

@@ -1,4 +1,3 @@
-import 'dart:convert';
 import 'dart:async'; // For Timer
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
@@ -61,6 +60,7 @@ class _CenterBoxState extends State<CenterBox> {
               s.warehouse, 
               s.posting_date, 
               s.posting_time, 
+              s.scan_reference_mode,
               s.synced, 
               COUNT(i.id) AS item_count
             FROM StockCountEntry AS s
@@ -81,7 +81,8 @@ class _CenterBoxState extends State<CenterBox> {
     }
   }
 
-  void startRecount(int entryId, String warehouse, String countType) {
+  void startRecount(int entryId, String warehouse, String countType,
+      String scanReferenceMode) {
     if (countType == 'Count type') {
       showErrorDialog(context, "Please select the Count type first.");
       return;
@@ -96,6 +97,7 @@ class _CenterBoxState extends State<CenterBox> {
                 recountEntryId: entryId,
                 recountWarehouse: warehouse,
                 countType: countType,
+                scanReferenceMode: scanReferenceMode,
                 database: widget.database),
           ),
         );
@@ -121,6 +123,7 @@ class _CenterBoxState extends State<CenterBox> {
     return Consumer<StockTakeNotifier>(
       builder: (context, stockTakeNotifier, child) {
         String countType = stockTakeNotifier.countType;
+        String scanReferenceMode = stockTakeNotifier.scanReferenceMode;
         return Center(
           child: Container(
             width: double.maxFinite,
@@ -157,6 +160,9 @@ class _CenterBoxState extends State<CenterBox> {
                                 entries[index]['id'],
                                 entries[index]['warehouse'],
                                 countType,
+                                (entries[index]['scan_reference_mode'] ??
+                                        scanReferenceMode)
+                                    .toString(),
                               );
                             },
                             entries[index]['synced'] == 0
@@ -188,7 +194,7 @@ Widget optionWidget(VoidCallback onTap, String title, String subTitle,
         borderRadius: BorderRadius.circular(10.0),
         boxShadow: [
           BoxShadow(
-            color: blackColor.withOpacity(0.1),
+            color: blackColor.withValues(alpha: 0.1),
             blurRadius: 6.0,
           ),
         ],
@@ -205,7 +211,7 @@ Widget optionWidget(VoidCallback onTap, String title, String subTitle,
                 color: circleColor,
                 boxShadow: [
                   BoxShadow(
-                    color: blackColor.withOpacity(0.15),
+                    color: blackColor.withValues(alpha: 0.15),
                     blurRadius: 6.0,
                   )
                 ],

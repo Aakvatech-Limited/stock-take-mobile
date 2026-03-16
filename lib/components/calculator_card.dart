@@ -235,8 +235,10 @@ class _CalculatorCardState extends State<CalculatorCard>
                       activeField = 'scannedCode';
                     });
                   },
-                  child:
-                      _buildScannedCodeDisplay(stockTakeNotifier.scannedData),
+                  child: _buildScannedCodeDisplay(
+                    stockTakeNotifier.scannedData,
+                    stockTakeNotifier.scanReferenceMode,
+                  ),
                 ),
               ),
             if (stockTakeNotifier.countType == 'Camera')
@@ -248,7 +250,10 @@ class _CalculatorCardState extends State<CalculatorCard>
                       activeField = 'scannedCode';
                     });
                   },
-                  child: _buildCameraView(stockTakeNotifier.scannedData),
+                  child: _buildCameraView(
+                    stockTakeNotifier.scannedData,
+                    stockTakeNotifier.scanReferenceMode,
+                  ),
                 ),
               ),
             Expanded(
@@ -268,7 +273,9 @@ class _CalculatorCardState extends State<CalculatorCard>
     );
   }
 
-  Widget _buildScannedCodeDisplay(String scannedData) {
+  Widget _buildScannedCodeDisplay(
+      String scannedData, String scanReferenceMode) {
+    final modeLabel = scanReferenceMode.isEmpty ? 'Blank' : scanReferenceMode;
     return Container(
       color: Colors.white,
       child: Center(
@@ -288,7 +295,7 @@ class _CalculatorCardState extends State<CalculatorCard>
                 });
               },
               child: Text(
-                'Scanned Code: $scannedData',
+                '[$modeLabel] Scanned Code: $scannedData',
                 style: TextStyle(
                   fontSize: 18,
                   fontWeight: FontWeight.bold,
@@ -304,7 +311,8 @@ class _CalculatorCardState extends State<CalculatorCard>
     );
   }
 
-  Widget _buildCameraView(String scannedData) {
+  Widget _buildCameraView(String scannedData, String scanReferenceMode) {
+    final modeLabel = scanReferenceMode.isEmpty ? 'Blank' : scanReferenceMode;
     return Container(
       height: 250, // Set a fixed height for the camera view
       child: Stack(
@@ -343,7 +351,7 @@ class _CalculatorCardState extends State<CalculatorCard>
                           color: Colors.white.withAlpha(128),
                           padding: const EdgeInsets.all(8),
                           child: Text(
-                            'Scanned Data: $scannedData',
+                            '[$modeLabel] Scanned Data: $scannedData',
                             textAlign: TextAlign.center,
                             style: TextStyle(
                               fontSize: 18,

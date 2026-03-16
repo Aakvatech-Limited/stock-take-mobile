@@ -134,6 +134,14 @@ class _EntryDetailsScreenState extends State<EntryDetailsScreen> {
                   buildDetailRow('Date:', entryDetails!['posting_date']),
                   buildDetailRow('Time:', entryDetails!['posting_time']),
                   buildDetailRow('Warehouse:', entryDetails!['warehouse']),
+                  buildDetailRow(
+                    'Reference Mode:',
+                    (entryDetails!['scan_reference_mode'] ?? '')
+                            .toString()
+                            .isEmpty
+                        ? 'Blank'
+                        : entryDetails!['scan_reference_mode'].toString(),
+                  ),
                   const SizedBox(height: 20),
                 ],
 
@@ -166,7 +174,7 @@ class _EntryDetailsScreenState extends State<EntryDetailsScreen> {
                               2: FixedColumnWidth(column3Width),
                             },
                             border: TableBorder.all(
-                                color: Colors.grey.withOpacity(0.5),
+                                color: Colors.grey.withValues(alpha: 0.5),
                                 style: BorderStyle.solid,
                                 width: 1),
                             children: [

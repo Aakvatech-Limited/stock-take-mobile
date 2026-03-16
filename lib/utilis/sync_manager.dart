@@ -14,8 +14,9 @@ class SyncManager {
     String path = join(databasesPath, 'stock_count.db');
     return await openDatabase(
       path,
-      version: 1,
+      version: DBSchema.dbVersion,
       onCreate: DBSchema.initDB,
+      onUpgrade: DBSchema.onUpgrade,
     );
   }
 
@@ -33,8 +34,9 @@ class SyncManager {
     if (rawAssignedItems == null) return <String>{};
 
     try {
-      final decoded =
-          rawAssignedItems is String ? jsonDecode(rawAssignedItems) : rawAssignedItems;
+      final decoded = rawAssignedItems is String
+          ? jsonDecode(rawAssignedItems)
+          : rawAssignedItems;
       if (decoded is! List) return <String>{};
 
       return decoded
@@ -91,10 +93,13 @@ class SyncManager {
                   entry['warehouse'], // Map 'warehouse' to 'set_warehouse'
               'posting_date': entry['posting_date'],
               'posting_time': entry['posting_time'],
+              'scan_reference_mode': entry['scan_reference_mode'] ?? '',
             },
             'entry_items': entryItems.map((item) {
-              final rawScanValue = (item['item_barcode'] ?? '').toString().trim();
-              final isAssignedItemCode = assignedItemCodes.contains(rawScanValue);
+              final rawScanValue =
+                  (item['item_barcode'] ?? '').toString().trim();
+              final isAssignedItemCode =
+                  assignedItemCodes.contains(rawScanValue);
 
               return {
                 'local_id': item['id'], // Map 'id' as 'local_id'
@@ -227,6 +232,7 @@ class SyncManager {
                 'warehouse': entry['set_warehouse'],
                 'posting_date': entry['posting_date'],
                 'posting_time': entry['posting_time'],
+                'scan_reference_mode': entry['scan_reference_mode'] ?? '',
                 'stock_count_person': entry['owner'],
                 'synced': 1,
                 'last_sync_time': DateTime.now().toIso8601String(),
@@ -257,6 +263,7 @@ class SyncManager {
                 'warehouse': entry['set_warehouse'],
                 'posting_date': entry['posting_date'],
                 'posting_time': entry['posting_time'],
+                'scan_reference_mode': entry['scan_reference_mode'] ?? '',
                 'stock_count_person': entry['owner'],
                 'synced': 1,
                 'last_sync_time': DateTime.now().toIso8601String(),
