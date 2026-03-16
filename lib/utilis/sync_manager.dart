@@ -1,4 +1,3 @@
-import 'package:flutter/material.dart';
 import 'package:stock_count/config.dart';
 import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart'; // Hive for token management
@@ -28,6 +27,26 @@ class SyncManager {
     return Hive.box('authBox');
   }
 
+  static Future<Set<String>> _getAssignedItemCodeSet() async {
+    final authBox = await _getAuthBox();
+    final rawAssignedItems = authBox.get('assigned_items');
+    if (rawAssignedItems == null) return <String>{};
+
+    try {
+      final decoded =
+          rawAssignedItems is String ? jsonDecode(rawAssignedItems) : rawAssignedItems;
+      if (decoded is! List) return <String>{};
+
+      return decoded
+          .whereType<Map>()
+          .map((row) => (row['item'] ?? '').toString().trim())
+          .where((itemCode) => itemCode.isNotEmpty)
+          .toSet();
+    } catch (_) {
+      return <String>{};
+    }
+  }
+
   // Sync to server without refreshing token automatically
   static Future<void> syncToServer() async {
     var authBox = await _getAuthBox(); // Ensure box is open
@@ -43,6 +62,7 @@ class SyncManager {
     }
 
     Database db = await getDatabase();
+    final assignedItemCodes = await _getAssignedItemCodeSet();
 
     try {
       // Fetch only unsynced entries (synced = 0)
@@ -73,9 +93,13 @@ class SyncManager {
               'posting_time': entry['posting_time'],
             },
             'entry_items': entryItems.map((item) {
+              final rawScanValue = (item['item_barcode'] ?? '').toString().trim();
+              final isAssignedItemCode = assignedItemCodes.contains(rawScanValue);
+
               return {
                 'local_id': item['id'], // Map 'id' as 'local_id'
-                'barcode': item['item_barcode'],
+                'barcode': isAssignedItemCode ? '' : rawScanValue,
+                'item_code': isAssignedItemCode ? rawScanValue : null,
                 'warehouse': item['warehouse'],
                 'qty': item['qty'],
                 // If you have item_name and item_code locally, include them
