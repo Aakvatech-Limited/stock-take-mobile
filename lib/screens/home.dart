@@ -309,20 +309,25 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> fetchMasterItems() async {
-    var authBox = await Hive.openBox('authBox'); // Ensure Hive box is open
-
-    final rawMasters = authBox.get('scan_reference_masters');
-    if (rawMasters == null) {
+    final items = await _loadMasterItemsFromCache();
+    if (!mounted) return;
+    if (items.isEmpty) {
       showErrorDialog(context, 'No master items found. Please pull masters first.');
       return;
     }
+    setState(() {
+      masterItems = items;
+    });
+  }
+
+  Future<List<Map<String, dynamic>>> _loadMasterItemsFromCache() async {
+    var authBox = await Hive.openBox('authBox');
+    final rawMasters = authBox.get('scan_reference_masters');
+    if (rawMasters == null) return <Map<String, dynamic>>[];
 
     try {
       final decoded = rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
-      if (decoded is! Map<String, dynamic>) {
-        showErrorDialog(context, 'Master payload is invalid. Please pull masters.');
-        return;
-      }
+      if (decoded is! Map<String, dynamic>) return <Map<String, dynamic>>[];
       final rawItems = decoded['items'];
       final items = <Map<String, dynamic>>[];
       if (rawItems is List) {
@@ -331,17 +336,128 @@ class _HomeScreenState extends State<HomeScreen>
           if (itemCode.isEmpty) continue;
           items.add({
             'item_code': itemCode,
-            'item_name': (row['item_name'] ?? '').toString(),
+            'item_name': (row['item_name'] ?? '').toString().trim(),
           });
         }
       }
-
-      setState(() {
-        masterItems = items;
-      });
+      items.sort((a, b) =>
+          (a['item_code'] as String).compareTo((b['item_code'] as String)));
+      return items;
     } catch (_) {
-      showErrorDialog(context, 'Failed to read master items. Please pull masters.');
+      return <Map<String, dynamic>>[];
     }
+  }
+
+  Future<void> _showItemCodePickerForCounting() async {
+    final items = await _loadMasterItemsFromCache();
+    if (!mounted) return;
+    if (items.isEmpty) {
+      showErrorDialog(context, 'No master items found. Please pull masters first.');
+      return;
+    }
+
+    final notifier = Provider.of<StockTakeNotifier>(context, listen: false);
+    final searchController = TextEditingController();
+    String query = '';
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: whiteColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = items.where((item) {
+              final itemCode =
+                  (item['item_code'] ?? '').toString().toLowerCase();
+              final itemName =
+                  (item['item_name'] ?? '').toString().toLowerCase();
+              final q = query.toLowerCase();
+              return itemCode.contains(q) || itemName.contains(q);
+            }).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * 0.75,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Items', style: semibold16Black33),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        controller: searchController,
+                        onChanged: (value) => setModalState(() => query = value),
+                        decoration: InputDecoration(
+                          hintText: 'Search item code or name',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: query.isNotEmpty
+                              ? IconButton(
+                                  onPressed: () {
+                                    searchController.clear();
+                                    setModalState(() => query = '');
+                                  },
+                                  icon: const Icon(Icons.clear),
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No matching items'))
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) =>
+                                  const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final item = filtered[index];
+                                final itemCode =
+                                    (item['item_code'] ?? '').toString();
+                                final itemName =
+                                    (item['item_name'] ?? '').toString();
+                                return ListTile(
+                                  title: Text(itemCode, style: medium14Black33),
+                                  subtitle:
+                                      itemName.isNotEmpty ? Text(itemName) : null,
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () {
+                                    notifier.setScannedData(itemCode);
+                                    Navigator.of(sheetContext).pop();
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
   }
 
   Future<void> _syncToCloud() async {
@@ -534,6 +650,11 @@ class _HomeScreenState extends State<HomeScreen>
 
   @override
   Widget build(BuildContext context) {
+    final stockTakeNotifier = context.watch<StockTakeNotifier>();
+    final showItemPickerAction = isCountStarted &&
+        _selectedIndex == 0 &&
+        stockTakeNotifier.scanReferenceMode.trim() == 'Item Code';
+
     return Stack(
       children: [
         Scaffold(
@@ -547,6 +668,16 @@ class _HomeScreenState extends State<HomeScreen>
             titleSpacing: 20.0,
             title: headerTitle(),
             actions: [
+              if (showItemPickerAction)
+                IconButton(
+                  tooltip: 'Items',
+                  onPressed: _showItemCodePickerForCounting,
+                  icon: const Icon(
+                    Icons.list_alt_rounded,
+                    color: whiteColor,
+                    size: 22.0,
+                  ),
+                ),
               IconButton(
                 tooltip: 'Sync Cloud',
                 onPressed: _isCloudSyncing ? null : _syncToCloud,
