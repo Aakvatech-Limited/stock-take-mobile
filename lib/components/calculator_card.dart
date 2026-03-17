@@ -136,22 +136,6 @@ class _CalculatorCardState extends State<CalculatorCard>
     final normalizedMode = scanReferenceMode.trim();
     final authBox = await Hive.openBox('authBox');
 
-    final rawAssignedItems = authBox.get('assigned_items');
-    final assignedItemCodes = <String>{};
-    if (rawAssignedItems != null) {
-      try {
-        final decoded = rawAssignedItems is String
-            ? jsonDecode(rawAssignedItems)
-            : rawAssignedItems;
-        if (decoded is List) {
-          for (final row in decoded.whereType<Map>()) {
-            final itemCode = (row['item'] ?? '').toString().trim();
-            if (itemCode.isNotEmpty) assignedItemCodes.add(itemCode);
-          }
-        }
-      } catch (_) {}
-    }
-
     final rawMasters = authBox.get('scan_reference_masters');
     final batchToItem = <String, String>{};
     final serialMap = <String, Map<String, String>>{};
@@ -260,13 +244,12 @@ class _CalculatorCardState extends State<CalculatorCard>
       };
     }
 
-    // Blank mode keeps classic barcode flow, with assigned-item shortcut.
-    final isAssignedItemCode = assignedItemCodes.contains(scanValue);
+    // Blank mode keeps classic barcode flow.
     return {
       'scan_reference_mode': '',
       'scan_value': scanValue,
-      'item_barcode': isAssignedItemCode ? '' : scanValue,
-      'item_code': isAssignedItemCode ? scanValue : '',
+      'item_barcode': scanValue,
+      'item_code': '',
       'batch_no': '',
       'serial_no': '',
     };

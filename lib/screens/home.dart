@@ -54,7 +54,7 @@ class _HomeScreenState extends State<HomeScreen>
   String? profilePictureUrl;
   String? accessToken;
   bool isTokenExpired = false; // Variable to track token expiration
-  List<Map<String, dynamic>> assignedItems = [];
+  List<Map<String, dynamic>> masterItems = [];
   final TextEditingController _searchController = TextEditingController();
   String searchQuery = ""; // State to store search input
 
@@ -204,7 +204,7 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  // Toggle the visibility of the slide-in dialog and fetch assigned items if counting is started
+  // Toggle the visibility of the slide-in dialog and fetch masters if counting is started
   void _toggleDialog() {
     if (_isDialogVisible) {
       _animationController.reverse().then((_) {
@@ -214,7 +214,7 @@ class _HomeScreenState extends State<HomeScreen>
       });
     } else {
       if (isCountStarted) {
-        fetchAssignedItems(); // Fetch assigned items only when opening the dialog in count mode
+        fetchMasterItems(); // Fetch item masters only when opening the dialog in count mode
       }
       setState(() {
         _isDialogVisible = true;
@@ -308,22 +308,39 @@ class _HomeScreenState extends State<HomeScreen>
     });
   }
 
-  Future<void> fetchAssignedItems() async {
+  Future<void> fetchMasterItems() async {
     var authBox = await Hive.openBox('authBox'); // Ensure Hive box is open
 
-    // Fetch assigned items from Hive storage
-    String? assignedItemsJson = authBox.get('assigned_items');
+    final rawMasters = authBox.get('scan_reference_masters');
+    if (rawMasters == null) {
+      showErrorDialog(context, 'No master items found. Please pull masters first.');
+      return;
+    }
 
-    if (assignedItemsJson != null) {
-      List<Map<String, dynamic>> items =
-          List<Map<String, dynamic>>.from(jsonDecode(assignedItemsJson));
+    try {
+      final decoded = rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+      if (decoded is! Map<String, dynamic>) {
+        showErrorDialog(context, 'Master payload is invalid. Please pull masters.');
+        return;
+      }
+      final rawItems = decoded['items'];
+      final items = <Map<String, dynamic>>[];
+      if (rawItems is List) {
+        for (final row in rawItems.whereType<Map>()) {
+          final itemCode = (row['item_code'] ?? row['item'] ?? '').toString().trim();
+          if (itemCode.isEmpty) continue;
+          items.add({
+            'item_code': itemCode,
+            'item_name': (row['item_name'] ?? '').toString(),
+          });
+        }
+      }
 
       setState(() {
-        assignedItems = items;
+        masterItems = items;
       });
-    } else {
-      // Optional: handle the case where no assigned items are found in Hive
-      showErrorDialog(context, 'No assigned items found in local storage.');
+    } catch (_) {
+      showErrorDialog(context, 'Failed to read master items. Please pull masters.');
     }
   }
 
@@ -361,7 +378,6 @@ class _HomeScreenState extends State<HomeScreen>
 
     try {
       await SyncManager.fetchAndStoreWarehousesAndCompanies();
-      await SyncManager.fetchAndStoreAssignedItems();
       await SyncManager.fetchAndStoreScanReferenceMasters();
       await SyncManager.syncFromServer();
       final authBox = await Hive.openBox('authBox');
@@ -387,13 +403,13 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _addAssignedItemWithQty(String itemCode, int qty) async {
+  Future<void> _addMasterItemWithQty(String itemCode, int qty) async {
     if (database == null) {
       showErrorDialog(context, 'Database is not ready.');
       return;
     }
     if (!isCountStarted || currentEntryId == 0) {
-      showErrorDialog(context, 'Please start count before adding assigned items.');
+      showErrorDialog(context, 'Please start count before adding items.');
       return;
     }
     if (qty <= 0) {
@@ -474,13 +490,13 @@ class _HomeScreenState extends State<HomeScreen>
     );
   }
 
-  Future<void> _showAssignedItemQtyDialog(String itemCode) async {
+  Future<void> _showMasterItemQtyDialog(String itemCode) async {
     final qtyController = TextEditingController(text: '1');
     await showDialog(
       context: context,
       builder: (dialogContext) {
         return AlertDialog(
-          title: const Text('Add Assigned Item'),
+          title: const Text('Add Item'),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             crossAxisAlignment: CrossAxisAlignment.start,
@@ -506,7 +522,7 @@ class _HomeScreenState extends State<HomeScreen>
               onPressed: () async {
                 final qty = int.tryParse(qtyController.text.trim()) ?? 0;
                 Navigator.of(dialogContext).pop();
-                await _addAssignedItemWithQty(itemCode, qty);
+                await _addMasterItemWithQty(itemCode, qty);
               },
               child: const Text('Add'),
             ),
@@ -665,7 +681,7 @@ class _HomeScreenState extends State<HomeScreen>
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: isCountStarted
-                        ? buildAssignedItemsList()
+                        ? buildMasterItemsList()
                         : buildSettingsList(),
                   ),
                 ),
@@ -712,11 +728,13 @@ class _HomeScreenState extends State<HomeScreen>
     ];
   }
 
-  List<Widget> buildAssignedItemsList() {
+  List<Widget> buildMasterItemsList() {
     // Filter items based on the search query
-    List<Map<String, dynamic>> filteredItems = assignedItems.where((item) {
-      String itemName = item['item']?.toLowerCase() ?? '';
-      return itemName.contains(searchQuery.toLowerCase());
+    List<Map<String, dynamic>> filteredItems = masterItems.where((item) {
+      final itemCode = (item['item_code'] ?? '').toString().toLowerCase();
+      final itemName = (item['item_name'] ?? '').toString().toLowerCase();
+      final query = searchQuery.toLowerCase();
+      return itemCode.contains(query) || itemName.contains(query);
     }).toList();
 
     return [
@@ -767,15 +785,18 @@ class _HomeScreenState extends State<HomeScreen>
                 itemCount: filteredItems.length,
                 itemBuilder: (context, index) {
                   var item = filteredItems[index];
-                  final itemCode = (item['item'] ?? '').toString();
+                  final itemCode = (item['item_code'] ?? '').toString();
+                  final itemName = (item['item_name'] ?? '').toString();
                   return ListTile(
                     title: Text(itemCode.isNotEmpty ? itemCode : 'Unnamed Item',
                         style: medium14Black33),
-                    subtitle: const Text('Tap to enter quantity and add'),
+                    subtitle: Text(
+                      itemName.isNotEmpty ? itemName : 'Tap to enter quantity and add',
+                    ),
                     trailing: const Icon(Icons.add_circle_outline),
                     onTap: itemCode.isEmpty
                         ? null
-                        : () => _showAssignedItemQtyDialog(itemCode),
+                        : () => _showMasterItemQtyDialog(itemCode),
                   );
                 },
               )

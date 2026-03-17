@@ -29,27 +29,6 @@ class SyncManager {
     return Hive.box('authBox');
   }
 
-  static Future<Set<String>> _getAssignedItemCodeSet() async {
-    final authBox = await _getAuthBox();
-    final rawAssignedItems = authBox.get('assigned_items');
-    if (rawAssignedItems == null) return <String>{};
-
-    try {
-      final decoded = rawAssignedItems is String
-          ? jsonDecode(rawAssignedItems)
-          : rawAssignedItems;
-      if (decoded is! List) return <String>{};
-
-      return decoded
-          .whereType<Map>()
-          .map((row) => (row['item'] ?? '').toString().trim())
-          .where((itemCode) => itemCode.isNotEmpty)
-          .toSet();
-    } catch (_) {
-      return <String>{};
-    }
-  }
-
   static String generateSyncUuid() {
     final random = Random.secure();
     String chunk(int length) => List.generate(
@@ -105,7 +84,6 @@ class SyncManager {
 
     Database db = await getDatabase();
     await _ensureSyncUuids(db);
-    final assignedItemCodes = await _getAssignedItemCodeSet();
 
     try {
       // Fetch only unsynced entries (synced = 0)
@@ -148,8 +126,6 @@ class SyncManager {
               final itemCodeRaw = (item['item_code'] ?? '').toString().trim();
               final batchNoRaw = (item['batch_no'] ?? '').toString().trim();
               final serialNoRaw = (item['serial_no'] ?? '').toString().trim();
-              final isAssignedItemCode =
-                  mode.isEmpty && assignedItemCodes.contains(rawScanValue);
 
               String barcodePayload = '';
               String? itemCodePayload = itemCodeRaw.isEmpty ? null : itemCodeRaw;
@@ -163,10 +139,7 @@ class SyncManager {
               } else if (mode == 'Serial No') {
                 serialNoPayload ??= rawScanValue.isNotEmpty ? rawScanValue : null;
               } else {
-                barcodePayload = isAssignedItemCode ? '' : rawScanValue;
-                if (isAssignedItemCode) {
-                  itemCodePayload = rawScanValue;
-                }
+                barcodePayload = rawScanValue;
               }
 
               return {
@@ -552,64 +525,6 @@ class SyncManager {
     }
   }
 
-  // Method to fetch and store assigned items in Hive
-  static Future<void> fetchAndStoreAssignedItems() async {
-    var authBox = await _getAuthBox();
-    String? accessToken = authBox.get('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(authBox.get('tokenExpiry') ?? '');
-
-    if (accessToken == null ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      print("Access token is either missing or expired. Sync aborted.");
-      return;
-    }
-
-    // Clear existing data to avoid stale cache issues
-    await authBox.delete('assigned_items');
-    print("Cleared previous assigned items before fetching new ones.");
-
-    try {
-      final baseUrl = await _baseUrl;
-      var response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/method/nex_bridge.api.stock_take.get_user_assigned_items'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
-
-      if (response.statusCode == 200) {
-        final data = jsonDecode(response.body);
-
-        // Safely check if 'message' and 'assigned_items' are valid keys and if the assigned items are a list.
-        if (data is Map<String, dynamic> &&
-            data['message'] is Map<String, dynamic> &&
-            data['message']['assigned_items'] is List) {
-          List<dynamic> assignedItems = data['message']['assigned_items'];
-
-          if (assignedItems.isNotEmpty) {
-            await authBox.put('assigned_items', jsonEncode(assignedItems));
-            print("Assigned items stored in Hive.");
-          } else {
-            // No assigned items available
-            print(
-                "Assigned items are empty. Cleared assigned_items from Hive.");
-          }
-        } else {
-          // Response not in expected format, ensure nothing stale is left
-          print(
-              "Unexpected response format for assigned items. Cleared assigned_items from Hive.");
-        }
-      } else {
-        print("Failed to fetch assigned items: ${response.body}");
-      }
-    } catch (e) {
-      print("Error fetching assigned items: $e");
-    }
-  }
-
   // Method to fetch and store offline scan reference masters for Item/Batch/Serial modes
   static Future<void> fetchAndStoreScanReferenceMasters() async {
     var authBox = await _getAuthBox();
@@ -649,7 +564,7 @@ class SyncManager {
                 ? message['serial_nos']
                 : <dynamic>[],
             'scope': (message['scope'] ?? 'unknown').toString(),
-            'assigned_item_count': message['assigned_item_count'] ?? 0,
+            'item_count': message['item_count'] ?? 0,
           };
           await authBox.put('scan_reference_masters', jsonEncode(payload));
           await authBox.put('scan_reference_master_scope',
@@ -675,7 +590,7 @@ class SyncManager {
         'barcodes': 0,
         'batches': 0,
         'serial_nos': 0,
-        'assigned_item_count': 0,
+        'item_count': 0,
       };
     }
 
@@ -688,7 +603,7 @@ class SyncManager {
           'barcodes': 0,
           'batches': 0,
           'serial_nos': 0,
-          'assigned_item_count': 0,
+          'item_count': 0,
         };
       }
       return {
@@ -700,9 +615,9 @@ class SyncManager {
         'serial_nos': decoded['serial_nos'] is List
             ? (decoded['serial_nos'] as List).length
             : 0,
-        'assigned_item_count': decoded['assigned_item_count'] is int
-            ? decoded['assigned_item_count']
-            : int.tryParse((decoded['assigned_item_count'] ?? '0').toString()) ??
+        'item_count': decoded['item_count'] is int
+            ? decoded['item_count']
+            : int.tryParse((decoded['item_count'] ?? '0').toString()) ??
                 0,
       };
     } catch (_) {
@@ -711,7 +626,7 @@ class SyncManager {
         'barcodes': 0,
         'batches': 0,
         'serial_nos': 0,
-        'assigned_item_count': 0,
+        'item_count': 0,
       };
     }
   }

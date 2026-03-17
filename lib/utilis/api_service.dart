@@ -81,7 +81,7 @@ class ApiService {
             // Store user details in Hive
             await authBox.put('userDetails', jsonEncode(userInfo));
 
-            // Fetch user-specific data (warehouses, companies, assigned items)
+            // Fetch user-specific data (warehouses, companies, masters)
             await fetchUserSpecificData();
 
             // Navigate to HomeScreen
@@ -110,7 +110,6 @@ class ApiService {
   // Fetch user-specific data after successful login
   static Future<void> fetchUserSpecificData() async {
     await SyncManager.fetchAndStoreWarehousesAndCompanies();
-    await SyncManager.fetchAndStoreAssignedItems();
     await SyncManager.fetchAndStoreScanReferenceMasters();
   }
 }
