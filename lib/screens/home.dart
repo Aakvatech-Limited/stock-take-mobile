@@ -64,6 +64,7 @@ class _HomeScreenState extends State<HomeScreen>
   late Animation<double> _fadeAnimation;
   bool _isDialogVisible = false;
   bool _isCloudSyncing = false;
+  bool _isMasterSyncing = false;
 
   @override
   void initState() {
@@ -248,6 +249,15 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onItemTapped(int index) async {
+    if (_isDialogVisible && index != 1) {
+      _animationController.reverse().then((_) {
+        if (!mounted) return;
+        setState(() {
+          _isDialogVisible = false;
+        });
+      });
+    }
+
     if (Provider.of<StockTakeNotifier>(context, listen: false).countType ==
             'Count type' &&
         _selectedIndex == 0 &&
@@ -342,6 +352,34 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _syncMasters() async {
+    if (_isMasterSyncing) return;
+
+    setState(() {
+      _isMasterSyncing = true;
+    });
+
+    try {
+      await SyncManager.fetchAndStoreWarehousesAndCompanies();
+      await SyncManager.fetchAndStoreAssignedItems();
+      await SyncManager.fetchAndStoreScanReferenceMasters();
+      await SyncManager.syncFromServer();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Master sync completed.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showErrorDialog(context, "Master sync failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isMasterSyncing = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -376,15 +414,34 @@ class _HomeScreenState extends State<HomeScreen>
                       ),
               ),
               IconButton(
-                padding:
-                    const EdgeInsets.symmetric(horizontal: fixPadding * 2.0),
-                onPressed: _toggleDialog, // Trigger the slide-in dialog
-                icon: Iconify(
-                  isCountStarted ? Carbon.list : Carbon.settings,
-                  color: whiteColor,
-                  size: 22.0,
+                tooltip: 'Pull Masters',
+                onPressed: _isMasterSyncing ? null : _syncMasters,
+                icon: _isMasterSyncing
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: whiteColor,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.sync,
+                        color: whiteColor,
+                        size: 22.0,
+                      ),
+              ),
+              if (_selectedIndex == 1)
+                IconButton(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: fixPadding * 2.0),
+                  onPressed: _toggleDialog, // Trigger the slide-in dialog
+                  icon: Iconify(
+                    isCountStarted ? Carbon.list : Carbon.settings,
+                    color: whiteColor,
+                    size: 22.0,
+                  ),
                 ),
-              )
             ],
           ),
           body: Consumer<StockTakeNotifier>(
