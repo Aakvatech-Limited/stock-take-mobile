@@ -3,6 +3,7 @@ import 'package:http/http.dart' as http;
 import 'package:hive/hive.dart'; // Hive for token management
 import 'package:sqflite/sqflite.dart';
 import 'dart:convert';
+import 'dart:math';
 import 'package:path/path.dart';
 import 'package:stock_count/utilis/db_schema.dart';
 
@@ -49,6 +50,45 @@ class SyncManager {
     }
   }
 
+  static String generateSyncUuid() {
+    final random = Random.secure();
+    String chunk(int length) => List.generate(
+          length,
+          (_) => random.nextInt(16).toRadixString(16),
+        ).join();
+    return '${chunk(8)}-${chunk(4)}-${chunk(4)}-${chunk(4)}-${chunk(12)}';
+  }
+
+  static Future<void> _ensureSyncUuids(Database db) async {
+    final entriesMissingUuid = await db.query(
+      'StockCountEntry',
+      columns: ['id'],
+      where: "sync_uuid IS NULL OR trim(sync_uuid) = ''",
+    );
+    for (final row in entriesMissingUuid) {
+      await db.update(
+        'StockCountEntry',
+        {'sync_uuid': generateSyncUuid()},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+
+    final itemsMissingUuid = await db.query(
+      'StockCountEntryItem',
+      columns: ['id'],
+      where: "sync_uuid IS NULL OR trim(sync_uuid) = ''",
+    );
+    for (final row in itemsMissingUuid) {
+      await db.update(
+        'StockCountEntryItem',
+        {'sync_uuid': generateSyncUuid()},
+        where: 'id = ?',
+        whereArgs: [row['id']],
+      );
+    }
+  }
+
   // Sync to server without refreshing token automatically
   static Future<void> syncToServer() async {
     var authBox = await _getAuthBox(); // Ensure box is open
@@ -64,6 +104,7 @@ class SyncManager {
     }
 
     Database db = await getDatabase();
+    await _ensureSyncUuids(db);
     final assignedItemCodes = await _getAssignedItemCodeSet();
 
     try {
@@ -87,7 +128,7 @@ class SyncManager {
 
           bulkData.add({
             'entry': {
-              'local_id': entry['id'], // Map 'id' as 'local_id'
+              'local_id': (entry['sync_uuid'] ?? '').toString(),
               'company': entry['company'],
               'set_warehouse':
                   entry['warehouse'], // Map 'warehouse' to 'set_warehouse'
@@ -102,7 +143,7 @@ class SyncManager {
                   assignedItemCodes.contains(rawScanValue);
 
               return {
-                'local_id': item['id'], // Map 'id' as 'local_id'
+                'local_id': (item['sync_uuid'] ?? '').toString(),
                 'barcode': isAssignedItemCode ? '' : rawScanValue,
                 'item_code': isAssignedItemCode ? rawScanValue : null,
                 'warehouse': item['warehouse'],
@@ -132,10 +173,27 @@ class SyncManager {
 
         if (response.statusCode == 200) {
           var responseData = jsonDecode(response.body);
-          var syncedEntries = responseData['message']['synced_entries'];
+          final message = responseData['message'] as Map<String, dynamic>? ?? {};
+          final status = (message['status'] ?? '').toString();
+          final serverMessage = (message['message'] ?? '').toString();
+          var syncedEntries = message['synced_entries'];
+          var failedEntries = message['failed_entries'];
 
-          if (syncedEntries != null && syncedEntries is List) {
+          if (status == 'error') {
+            throw Exception(serverMessage.isNotEmpty
+                ? serverMessage
+                : 'Server rejected all entries.');
+          }
+
+          if (syncedEntries != null &&
+              syncedEntries is List &&
+              syncedEntries.isNotEmpty) {
             for (var syncedEntry in syncedEntries) {
+              final syncedEntryUuid =
+                  (syncedEntry['local_id'] ?? '').toString().trim();
+              if (syncedEntryUuid.isEmpty) {
+                continue;
+              }
               // Update local entries with server_id and mark as synced
               await db.update(
                 'StockCountEntry',
@@ -144,8 +202,8 @@ class SyncManager {
                   'server_id': syncedEntry['server_id'],
                   'last_sync_time': DateTime.now().toIso8601String(),
                 },
-                where: 'id = ?',
-                whereArgs: [syncedEntry['local_id']],
+                where: 'sync_uuid = ?',
+                whereArgs: [syncedEntryUuid],
               );
 
               // Update associated items
@@ -153,6 +211,11 @@ class SyncManager {
               List<dynamic> syncedItems = syncedEntry['items'] ?? [];
 
               for (var syncedItem in syncedItems) {
+                final syncedItemUuid =
+                    (syncedItem['local_id'] ?? '').toString().trim();
+                if (syncedItemUuid.isEmpty) {
+                  continue;
+                }
                 await db.update(
                   'StockCountEntryItem',
                   {
@@ -162,13 +225,17 @@ class SyncManager {
                     // 'current_qty' is not present locally; handle accordingly
                     // 'item_name' and 'item_code' are not present locally; handle if needed
                   },
-                  where: 'id = ?',
-                  whereArgs: [syncedItem['local_id']],
+                  where: 'sync_uuid = ?',
+                  whereArgs: [syncedItemUuid],
                 );
               }
             }
-            print("Bulk sync completed successfully.");
           } else {
+            if (failedEntries is List && failedEntries.isNotEmpty) {
+              throw Exception(serverMessage.isNotEmpty
+                  ? serverMessage
+                  : 'Server failed to sync entries.');
+            }
             print("No synced entries found in response.");
           }
         } else {
@@ -228,6 +295,9 @@ class SyncManager {
               'StockCountEntry',
               {
                 'server_id': serverId,
+                'sync_uuid': (entry['local_id'] ?? '').toString().isNotEmpty
+                    ? entry['local_id']
+                    : generateSyncUuid(),
                 'company': entry['company'],
                 'warehouse': entry['set_warehouse'],
                 'posting_date': entry['posting_date'],
@@ -247,6 +317,9 @@ class SyncManager {
                   'stock_count_entry_id':
                       await _getLocalEntryIdByServerId(db, serverId!),
                   'server_id': item['name'],
+                  'sync_uuid': (item['local_id'] ?? '').toString().isNotEmpty
+                      ? item['local_id']
+                      : generateSyncUuid(),
                   'item_barcode': item['barcode'],
                   'warehouse': item['warehouse'],
                   'qty': item['qty'],
@@ -259,6 +332,9 @@ class SyncManager {
             await db.update(
               'StockCountEntry',
               {
+                'sync_uuid': (entry['local_id'] ?? '').toString().isNotEmpty
+                    ? entry['local_id']
+                    : generateSyncUuid(),
                 'company': entry['company'],
                 'warehouse': entry['set_warehouse'],
                 'posting_date': entry['posting_date'],
@@ -291,6 +367,9 @@ class SyncManager {
                     'stock_count_entry_id':
                         await _getLocalEntryIdByServerId(db, serverId!),
                     'server_id': itemServerId,
+                    'sync_uuid': (item['local_id'] ?? '').toString().isNotEmpty
+                        ? item['local_id']
+                        : generateSyncUuid(),
                     'item_barcode': item['barcode'],
                     'warehouse': item['warehouse'],
                     'qty': item['qty'],
@@ -302,6 +381,9 @@ class SyncManager {
                 await db.update(
                   'StockCountEntryItem',
                   {
+                    'sync_uuid': (item['local_id'] ?? '').toString().isNotEmpty
+                        ? item['local_id']
+                        : generateSyncUuid(),
                     'item_barcode': item['barcode'],
                     'warehouse': item['warehouse'],
                     'qty': item['qty'],

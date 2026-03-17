@@ -5,6 +5,7 @@ import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
+import 'package:stock_count/utilis/sync_manager.dart';
 import 'package:sunmi_scanner/sunmi_scanner.dart';
 
 class CalculatorCard extends StatefulWidget {
@@ -187,9 +188,19 @@ class _CalculatorCardState extends State<CalculatorCard>
       );
 
       if (existingEntries.isNotEmpty) {
+        final existingSyncUuid =
+            (existingEntries.first['sync_uuid'] ?? '').toString().trim();
+        final updateData = <String, Object?>{
+          'qty': quantity,
+          'synced': 0,
+        };
+        if (existingSyncUuid.isEmpty) {
+          updateData['sync_uuid'] = SyncManager.generateSyncUuid();
+        }
+
         await widget.database!.update(
           'StockCountEntryItem',
-          {'qty': quantity, 'synced': 0},
+          updateData,
           where:
               'stock_count_entry_id = ? AND item_barcode = ? AND warehouse = ?',
           whereArgs: [widget.entryId, barcode, widget.warehouse],
@@ -197,6 +208,7 @@ class _CalculatorCardState extends State<CalculatorCard>
       } else {
         await widget.database!.insert('StockCountEntryItem', {
           'stock_count_entry_id': widget.entryId,
+          'sync_uuid': SyncManager.generateSyncUuid(),
           'item_barcode': barcode,
           'warehouse': widget.warehouse,
           'qty': quantity,

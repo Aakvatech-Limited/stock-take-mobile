@@ -189,6 +189,7 @@ class _HomeScreenState extends State<HomeScreen>
     String postingTime = DateTime.now().toString().substring(11);
 
     int id = await database!.insert('StockCountEntry', {
+      'sync_uuid': SyncManager.generateSyncUuid(),
       'company': selectedCompany,
       'warehouse': selectedWarehouse,
       'posting_date': postingDate,

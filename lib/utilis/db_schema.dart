@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 class DBSchema {
-  static const int dbVersion = 2;
+  static const int dbVersion = 3;
 
   // Function to initialize the database
   static Future<void> initDB(Database db, int version) async {
@@ -14,6 +14,7 @@ class DBSchema {
         warehouse TEXT NOT NULL,
         posting_date TEXT NOT NULL,
         posting_time TEXT NOT NULL,
+        sync_uuid TEXT,
         scan_reference_mode TEXT DEFAULT '',
         stock_count_person TEXT NOT NULL,
         synced INTEGER DEFAULT 0, -- Whether entry has been synced (0: no, 1: yes)
@@ -27,6 +28,7 @@ class DBSchema {
         id INTEGER PRIMARY KEY AUTOINCREMENT, -- Local unique ID
         stock_count_entry_id INTEGER NOT NULL, -- Local FK to StockCountEntry
         server_id TEXT, -- The ID from the Frappe server for each item
+        sync_uuid TEXT,
         item_barcode TEXT NOT NULL,
         warehouse TEXT NOT NULL,
         qty INTEGER NOT NULL,
@@ -45,6 +47,20 @@ class DBSchema {
         tableName: 'StockCountEntry',
         columnName: 'scan_reference_mode',
         columnTypeSql: "TEXT DEFAULT ''",
+      );
+    }
+    if (oldVersion < 3) {
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntry',
+        columnName: 'sync_uuid',
+        columnTypeSql: "TEXT",
+      );
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntryItem',
+        columnName: 'sync_uuid',
+        columnTypeSql: "TEXT",
       );
     }
   }
