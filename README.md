@@ -10,7 +10,7 @@
 
 You can download the latest APK directly from this repository:
 
-[**Download Stock Take APK**](https://github.com/Aakvatech-Limited/stock-take-mobile/raw/main/Stock%20Take.apk)
+[**Download Stock Take APK**](https://github.com/Aakvatech-Limited/stock-take-mobile/raw/main/Stock-Take-Android.apk)
 
 After installation, you'll need to configure the app to connect to your Frappe/ERPNext server.
 
@@ -56,5 +56,4 @@ Below are sample screenshots demonstrating various parts of the app:
 |:--------------------------------------:|:--------------------------------------:|:-----------------------------:|
 
 ---
-
 
