@@ -1,11 +1,14 @@
 import 'dart:ui';
+import 'dart:convert';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sqflite/sqflite.dart';
+import 'package:hive/hive.dart';
 import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/sync_manager.dart';
+import 'package:stock_count/utilis/dialog_messages.dart';
 import 'package:sunmi_scanner/sunmi_scanner.dart';
 
 class CalculatorCard extends StatefulWidget {
@@ -103,12 +106,20 @@ class _CalculatorCardState extends State<CalculatorCard>
 
     final stockTakeNotifier =
         Provider.of<StockTakeNotifier>(context, listen: false);
-    String barcode = stockTakeNotifier.scannedData;
+    final scanValue = stockTakeNotifier.scannedData.trim();
+    final scanReferenceMode = stockTakeNotifier.scanReferenceMode;
 
     final existingEntry = await widget.database!.query(
       'StockCountEntryItem',
-      where: 'stock_count_entry_id = ? AND item_barcode = ? AND warehouse = ?',
-      whereArgs: [widget.entryId, barcode, widget.warehouse],
+      where:
+          'stock_count_entry_id = ? AND warehouse = ? AND ((scan_reference_mode = ? AND scan_value = ?) OR ((scan_reference_mode IS NULL OR scan_reference_mode = \'\') AND item_barcode = ?))',
+      whereArgs: [
+        widget.entryId,
+        widget.warehouse,
+        scanReferenceMode,
+        scanValue,
+        scanValue,
+      ],
     );
 
     if (!mounted) return;
@@ -118,6 +129,142 @@ class _CalculatorCardState extends State<CalculatorCard>
           ? existingEntry.first['qty'].toString()
           : '0';
     });
+  }
+
+  Future<Map<String, dynamic>?> _resolveScanReference(
+      String scanValue, String scanReferenceMode) async {
+    final normalizedMode = scanReferenceMode.trim();
+    final authBox = await Hive.openBox('authBox');
+
+    final rawAssignedItems = authBox.get('assigned_items');
+    final assignedItemCodes = <String>{};
+    if (rawAssignedItems != null) {
+      try {
+        final decoded = rawAssignedItems is String
+            ? jsonDecode(rawAssignedItems)
+            : rawAssignedItems;
+        if (decoded is List) {
+          for (final row in decoded.whereType<Map>()) {
+            final itemCode = (row['item'] ?? '').toString().trim();
+            if (itemCode.isNotEmpty) assignedItemCodes.add(itemCode);
+          }
+        }
+      } catch (_) {}
+    }
+
+    final rawMasters = authBox.get('scan_reference_masters');
+    final batchToItem = <String, String>{};
+    final serialMap = <String, Map<String, String>>{};
+    final barcodeToItem = <String, String>{};
+    if (rawMasters != null) {
+      try {
+        final decoded =
+            rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+        if (decoded is Map<String, dynamic>) {
+          final batches = decoded['batches'];
+          if (batches is List) {
+            for (final row in batches.whereType<Map>()) {
+              final batchNo = (row['batch_no'] ?? '').toString().trim();
+              final itemCode = (row['item_code'] ?? '').toString().trim();
+              if (batchNo.isNotEmpty && itemCode.isNotEmpty) {
+                batchToItem[batchNo] = itemCode;
+              }
+            }
+          }
+
+          final serialNos = decoded['serial_nos'];
+          if (serialNos is List) {
+            for (final row in serialNos.whereType<Map>()) {
+              final serialNo = (row['serial_no'] ?? '').toString().trim();
+              final itemCode = (row['item_code'] ?? '').toString().trim();
+              final batchNo = (row['batch_no'] ?? '').toString().trim();
+              if (serialNo.isNotEmpty && itemCode.isNotEmpty) {
+                serialMap[serialNo] = {
+                  'item_code': itemCode,
+                  'batch_no': batchNo,
+                };
+              }
+            }
+          }
+
+          final barcodes = decoded['barcodes'];
+          if (barcodes is List) {
+            for (final row in barcodes.whereType<Map>()) {
+              final barcode = (row['barcode'] ?? '').toString().trim();
+              final itemCode = (row['item_code'] ?? '').toString().trim();
+              if (barcode.isNotEmpty && itemCode.isNotEmpty) {
+                barcodeToItem[barcode] = itemCode;
+              }
+            }
+          }
+        }
+      } catch (_) {}
+    }
+
+    if (normalizedMode == 'Item Code') {
+      final mappedItemCode = barcodeToItem[scanValue];
+      final itemCode =
+          (mappedItemCode ?? scanValue).trim();
+      return {
+        'scan_reference_mode': normalizedMode,
+        'scan_value': scanValue,
+        'item_barcode': '',
+        'item_code': itemCode,
+        'batch_no': '',
+        'serial_no': '',
+      };
+    }
+
+    if (normalizedMode == 'Batch No') {
+      final itemCode = batchToItem[scanValue];
+      if (itemCode == null || itemCode.isEmpty) {
+        showErrorDialog(
+          context,
+          'Batch "$scanValue" was not found offline. Please sync masters first.',
+        );
+        return null;
+      }
+
+      return {
+        'scan_reference_mode': normalizedMode,
+        'scan_value': scanValue,
+        'item_barcode': '',
+        'item_code': itemCode,
+        'batch_no': scanValue,
+        'serial_no': '',
+      };
+    }
+
+    if (normalizedMode == 'Serial No') {
+      final serialDetails = serialMap[scanValue];
+      if (serialDetails == null || (serialDetails['item_code'] ?? '').isEmpty) {
+        showErrorDialog(
+          context,
+          'Serial "$scanValue" was not found offline. Please sync masters first.',
+        );
+        return null;
+      }
+
+      return {
+        'scan_reference_mode': normalizedMode,
+        'scan_value': scanValue,
+        'item_barcode': '',
+        'item_code': serialDetails['item_code'],
+        'batch_no': serialDetails['batch_no'] ?? '',
+        'serial_no': scanValue,
+      };
+    }
+
+    // Blank mode keeps classic barcode flow, with assigned-item shortcut.
+    final isAssignedItemCode = assignedItemCodes.contains(scanValue);
+    return {
+      'scan_reference_mode': '',
+      'scan_value': scanValue,
+      'item_barcode': isAssignedItemCode ? '' : scanValue,
+      'item_code': isAssignedItemCode ? scanValue : '',
+      'batch_no': '',
+      'serial_no': '',
+    };
   }
 
   void _onButtonPressed(String label) {
@@ -171,7 +318,8 @@ class _CalculatorCardState extends State<CalculatorCard>
 
     final stockTakeNotifier =
         Provider.of<StockTakeNotifier>(context, listen: false);
-    String barcode = stockTakeNotifier.scannedData;
+    final scanValue = stockTakeNotifier.scannedData.trim();
+    final scanReferenceMode = stockTakeNotifier.scanReferenceMode.trim();
     int quantity = int.tryParse(displayText) ?? 0;
 
     if (widget.database == null) {
@@ -179,18 +327,43 @@ class _CalculatorCardState extends State<CalculatorCard>
       return;
     }
 
-    if (widget.entryId != 0 && barcode.isNotEmpty && quantity > 0) {
+    if (widget.entryId != 0 && scanValue.isNotEmpty && quantity > 0) {
+      if (scanReferenceMode == 'Serial No' && quantity != 1) {
+        showErrorDialog(
+          context,
+          'Serial No mode accepts quantity 1 per scanned serial.',
+        );
+        return;
+      }
+
+      final resolved =
+          await _resolveScanReference(scanValue, scanReferenceMode);
+      if (resolved == null) {
+        return;
+      }
+
       List<Map> existingEntries = await widget.database!.query(
         'StockCountEntryItem',
         where:
-            'stock_count_entry_id = ? AND item_barcode = ? AND warehouse = ?',
-        whereArgs: [widget.entryId, barcode, widget.warehouse],
+            'stock_count_entry_id = ? AND scan_reference_mode = ? AND scan_value = ? AND warehouse = ?',
+        whereArgs: [
+          widget.entryId,
+          resolved['scan_reference_mode'],
+          resolved['scan_value'],
+          widget.warehouse,
+        ],
       );
 
       if (existingEntries.isNotEmpty) {
         final existingSyncUuid =
             (existingEntries.first['sync_uuid'] ?? '').toString().trim();
         final updateData = <String, Object?>{
+          'scan_reference_mode': resolved['scan_reference_mode'],
+          'scan_value': resolved['scan_value'],
+          'item_barcode': resolved['item_barcode'],
+          'item_code': resolved['item_code'],
+          'batch_no': resolved['batch_no'],
+          'serial_no': resolved['serial_no'],
           'qty': quantity,
           'synced': 0,
         };
@@ -202,14 +375,24 @@ class _CalculatorCardState extends State<CalculatorCard>
           'StockCountEntryItem',
           updateData,
           where:
-              'stock_count_entry_id = ? AND item_barcode = ? AND warehouse = ?',
-          whereArgs: [widget.entryId, barcode, widget.warehouse],
+              'stock_count_entry_id = ? AND scan_reference_mode = ? AND scan_value = ? AND warehouse = ?',
+          whereArgs: [
+            widget.entryId,
+            resolved['scan_reference_mode'],
+            resolved['scan_value'],
+            widget.warehouse,
+          ],
         );
       } else {
         await widget.database!.insert('StockCountEntryItem', {
           'stock_count_entry_id': widget.entryId,
           'sync_uuid': SyncManager.generateSyncUuid(),
-          'item_barcode': barcode,
+          'scan_reference_mode': resolved['scan_reference_mode'],
+          'scan_value': resolved['scan_value'],
+          'item_barcode': resolved['item_barcode'],
+          'item_code': resolved['item_code'],
+          'batch_no': resolved['batch_no'],
+          'serial_no': resolved['serial_no'],
           'warehouse': widget.warehouse,
           'qty': quantity,
           'synced': 0

@@ -5,13 +5,11 @@ import 'package:stock_count/config.dart';
 import 'package:stock_count/screens/home.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
-import 'package:internet_connection_checker/internet_connection_checker.dart';
 import 'package:hive/hive.dart';
 import 'package:stock_count/utilis/sync_manager.dart'; // Import SyncManager to fetch user data
 
 class ApiService {
   // We'll use methods instead of constants since we need to fetch values asynchronously
-  static Future<String> get _baseUrl async => await AppConfig.baseUrl;
   static Future<String> get _clientId async => await AppConfig.clientId;
   static final String _redirectUri = AppConfig.redirectUri;
   static final String _tokenEndpoint = AppConfig.tokenEndpoint;
@@ -113,12 +111,6 @@ class ApiService {
   static Future<void> fetchUserSpecificData() async {
     await SyncManager.fetchAndStoreWarehousesAndCompanies();
     await SyncManager.fetchAndStoreAssignedItems();
-  }
-
-  static Future<void> _logout(BuildContext context) async {
-    var authBox = Hive.box('authBox');
-    await authBox.clear(); // Clear all authentication data
-    Navigator.pushReplacementNamed(
-        context, '/login'); // Navigate to login screen
+    await SyncManager.fetchAndStoreScanReferenceMasters();
   }
 }

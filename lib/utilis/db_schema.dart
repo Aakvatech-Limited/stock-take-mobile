@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 class DBSchema {
-  static const int dbVersion = 3;
+  static const int dbVersion = 4;
 
   // Function to initialize the database
   static Future<void> initDB(Database db, int version) async {
@@ -30,6 +30,11 @@ class DBSchema {
         server_id TEXT, -- The ID from the Frappe server for each item
         sync_uuid TEXT,
         item_barcode TEXT NOT NULL,
+        scan_reference_mode TEXT DEFAULT '',
+        scan_value TEXT,
+        item_code TEXT,
+        batch_no TEXT,
+        serial_no TEXT,
         warehouse TEXT NOT NULL,
         qty INTEGER NOT NULL,
         synced INTEGER DEFAULT 0, -- Whether item has been synced (0: no, 1: yes)
@@ -62,6 +67,44 @@ class DBSchema {
         columnName: 'sync_uuid',
         columnTypeSql: "TEXT",
       );
+    }
+    if (oldVersion < 4) {
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntryItem',
+        columnName: 'scan_reference_mode',
+        columnTypeSql: "TEXT DEFAULT ''",
+      );
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntryItem',
+        columnName: 'scan_value',
+        columnTypeSql: "TEXT",
+      );
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntryItem',
+        columnName: 'item_code',
+        columnTypeSql: "TEXT",
+      );
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntryItem',
+        columnName: 'batch_no',
+        columnTypeSql: "TEXT",
+      );
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntryItem',
+        columnName: 'serial_no',
+        columnTypeSql: "TEXT",
+      );
+
+      await db.execute("""
+        UPDATE StockCountEntryItem
+        SET scan_value = item_barcode
+        WHERE scan_value IS NULL OR trim(scan_value) = ''
+      """);
     }
   }
 

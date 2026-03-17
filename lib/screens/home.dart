@@ -579,8 +579,10 @@ class _HomeScreenState extends State<HomeScreen>
                         style: medium14Black33),
                     onTap: () {
                       // Set scannedData in the provider and close the dialog
-                      Provider.of<StockTakeNotifier>(context, listen: false)
-                          .setScannedData(item['item'] ?? '');
+                      final notifier =
+                          Provider.of<StockTakeNotifier>(context, listen: false);
+                      notifier.setScanReferenceMode('Item Code');
+                      notifier.setScannedData(item['item'] ?? '');
                       _toggleDialog(); // Hide dialog after item is selected
                     },
                   );

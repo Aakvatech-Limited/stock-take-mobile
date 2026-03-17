@@ -212,6 +212,25 @@ class _EntryDetailsScreenState extends State<EntryDetailsScreen> {
                               ...scannedItems.asMap().entries.map((entry) {
                                 final index = entry.key;
                                 final item = entry.value;
+                                final mode =
+                                    (item['scan_reference_mode'] ?? '').toString();
+                                final modeLabel =
+                                    mode.isEmpty ? 'Blank' : mode;
+                                final reference = (item['scan_value'] ??
+                                        item['item_barcode'] ??
+                                        '')
+                                    .toString();
+                                final itemCode =
+                                    (item['item_code'] ?? '').toString();
+                                final batchNo =
+                                    (item['batch_no'] ?? '').toString();
+                                final serialNo =
+                                    (item['serial_no'] ?? '').toString();
+                                final itemDetails = [
+                                  if (itemCode.isNotEmpty) 'Item: $itemCode',
+                                  if (batchNo.isNotEmpty) 'Batch: $batchNo',
+                                  if (serialNo.isNotEmpty) 'Serial: $serialNo',
+                                ].join(' | ');
                                 return TableRow(
                                   children: [
                                     TableCell(
@@ -224,8 +243,12 @@ class _EntryDetailsScreenState extends State<EntryDetailsScreen> {
                                     TableCell(
                                       child: Padding(
                                         padding: const EdgeInsets.all(8.0),
-                                        child: Text(item['item_barcode'],
-                                            style: medium14Black33),
+                                        child: Text(
+                                          itemDetails.isNotEmpty
+                                              ? '[$modeLabel] $reference\n$itemDetails'
+                                              : '[$modeLabel] $reference',
+                                          style: medium14Black33,
+                                        ),
                                       ),
                                     ),
                                     TableCell(

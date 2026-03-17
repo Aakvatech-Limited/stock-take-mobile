@@ -137,15 +137,46 @@ class SyncManager {
               'scan_reference_mode': entry['scan_reference_mode'] ?? '',
             },
             'entry_items': entryItems.map((item) {
-              final rawScanValue =
-                  (item['item_barcode'] ?? '').toString().trim();
+              final mode = (item['scan_reference_mode'] ??
+                      entry['scan_reference_mode'] ??
+                      '')
+                  .toString()
+                  .trim();
+              final rawScanValue = (item['scan_value'] ?? item['item_barcode'] ?? '')
+                  .toString()
+                  .trim();
+              final itemCodeRaw = (item['item_code'] ?? '').toString().trim();
+              final batchNoRaw = (item['batch_no'] ?? '').toString().trim();
+              final serialNoRaw = (item['serial_no'] ?? '').toString().trim();
               final isAssignedItemCode =
-                  assignedItemCodes.contains(rawScanValue);
+                  mode.isEmpty && assignedItemCodes.contains(rawScanValue);
+
+              String barcodePayload = '';
+              String? itemCodePayload = itemCodeRaw.isEmpty ? null : itemCodeRaw;
+              String? batchNoPayload = batchNoRaw.isEmpty ? null : batchNoRaw;
+              String? serialNoPayload = serialNoRaw.isEmpty ? null : serialNoRaw;
+
+              if (mode == 'Item Code') {
+                itemCodePayload ??= rawScanValue.isNotEmpty ? rawScanValue : null;
+              } else if (mode == 'Batch No') {
+                batchNoPayload ??= rawScanValue.isNotEmpty ? rawScanValue : null;
+              } else if (mode == 'Serial No') {
+                serialNoPayload ??= rawScanValue.isNotEmpty ? rawScanValue : null;
+              } else {
+                barcodePayload = isAssignedItemCode ? '' : rawScanValue;
+                if (isAssignedItemCode) {
+                  itemCodePayload = rawScanValue;
+                }
+              }
 
               return {
                 'local_id': (item['sync_uuid'] ?? '').toString(),
-                'barcode': isAssignedItemCode ? '' : rawScanValue,
-                'item_code': isAssignedItemCode ? rawScanValue : null,
+                'scan_reference_mode': mode,
+                'scan_value': rawScanValue,
+                'barcode': barcodePayload,
+                'item_code': itemCodePayload,
+                'batch_no': batchNoPayload,
+                'serial_no': serialNoPayload,
                 'warehouse': item['warehouse'],
                 'qty': item['qty'],
                 // If you have item_name and item_code locally, include them
@@ -311,6 +342,16 @@ class SyncManager {
 
             List<dynamic> entryItems = entry['items'] ?? [];
             for (var item in entryItems) {
+              final itemMode =
+                  (item['scan_reference_mode'] ?? entry['scan_reference_mode'] ?? '')
+                      .toString();
+              final itemScanValue = (item['scan_value'] ??
+                      item['barcode'] ??
+                      item['item_code'] ??
+                      item['batch_no'] ??
+                      item['serial_no'] ??
+                      '')
+                  .toString();
               await db.insert(
                 'StockCountEntryItem',
                 {
@@ -320,7 +361,12 @@ class SyncManager {
                   'sync_uuid': (item['local_id'] ?? '').toString().isNotEmpty
                       ? item['local_id']
                       : generateSyncUuid(),
-                  'item_barcode': item['barcode'],
+                  'scan_reference_mode': itemMode,
+                  'scan_value': itemScanValue,
+                  'item_barcode': (item['barcode'] ?? '').toString(),
+                  'item_code': item['item_code'],
+                  'batch_no': item['batch_no'],
+                  'serial_no': item['serial_no'],
                   'warehouse': item['warehouse'],
                   'qty': item['qty'],
                   'synced': 1,
@@ -352,6 +398,16 @@ class SyncManager {
             List<dynamic> entryItems = entry['items'] ?? [];
             for (var item in entryItems) {
               String? itemServerId = item['name'];
+              final itemMode =
+                  (item['scan_reference_mode'] ?? entry['scan_reference_mode'] ?? '')
+                      .toString();
+              final itemScanValue = (item['scan_value'] ??
+                      item['barcode'] ??
+                      item['item_code'] ??
+                      item['batch_no'] ??
+                      item['serial_no'] ??
+                      '')
+                  .toString();
               // Check if item exists
               List<Map<String, dynamic>> localItem = await db.query(
                 'StockCountEntryItem',
@@ -370,7 +426,12 @@ class SyncManager {
                     'sync_uuid': (item['local_id'] ?? '').toString().isNotEmpty
                         ? item['local_id']
                         : generateSyncUuid(),
-                    'item_barcode': item['barcode'],
+                    'scan_reference_mode': itemMode,
+                    'scan_value': itemScanValue,
+                    'item_barcode': (item['barcode'] ?? '').toString(),
+                    'item_code': item['item_code'],
+                    'batch_no': item['batch_no'],
+                    'serial_no': item['serial_no'],
                     'warehouse': item['warehouse'],
                     'qty': item['qty'],
                     'synced': 1,
@@ -384,7 +445,12 @@ class SyncManager {
                     'sync_uuid': (item['local_id'] ?? '').toString().isNotEmpty
                         ? item['local_id']
                         : generateSyncUuid(),
-                    'item_barcode': item['barcode'],
+                    'scan_reference_mode': itemMode,
+                    'scan_value': itemScanValue,
+                    'item_barcode': (item['barcode'] ?? '').toString(),
+                    'item_code': item['item_code'],
+                    'batch_no': item['batch_no'],
+                    'serial_no': item['serial_no'],
                     'warehouse': item['warehouse'],
                     'qty': item['qty'],
                     'synced': 1,
@@ -541,6 +607,57 @@ class SyncManager {
       }
     } catch (e) {
       print("Error fetching assigned items: $e");
+    }
+  }
+
+  // Method to fetch and store offline scan reference masters for Item/Batch/Serial modes
+  static Future<void> fetchAndStoreScanReferenceMasters() async {
+    var authBox = await _getAuthBox();
+    String? accessToken = authBox.get('accessToken');
+    DateTime? tokenExpiry = DateTime.tryParse(authBox.get('tokenExpiry') ?? '');
+
+    if (accessToken == null ||
+        tokenExpiry == null ||
+        DateTime.now().isAfter(tokenExpiry)) {
+      print("Access token is either missing or expired. Sync aborted.");
+      return;
+    }
+
+    try {
+      final baseUrl = await _baseUrl;
+      var response = await http.post(
+        Uri.parse(
+            '$baseUrl/api/method/nex_bridge.api.stock_take.get_scan_reference_masters'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> && data['message'] is Map<String, dynamic>) {
+          final message = Map<String, dynamic>.from(data['message']);
+          final payload = {
+            'items': message['items'] is List ? message['items'] : <dynamic>[],
+            'barcodes':
+                message['barcodes'] is List ? message['barcodes'] : <dynamic>[],
+            'batches':
+                message['batches'] is List ? message['batches'] : <dynamic>[],
+            'serial_nos': message['serial_nos'] is List
+                ? message['serial_nos']
+                : <dynamic>[],
+          };
+          await authBox.put('scan_reference_masters', jsonEncode(payload));
+        } else {
+          await authBox.delete('scan_reference_masters');
+          print("Unexpected response format for scan reference masters.");
+        }
+      } else {
+        print("Failed to fetch scan reference masters: ${response.body}");
+      }
+    } catch (e) {
+      print("Error fetching scan reference masters: $e");
     }
   }
 
