@@ -14,6 +14,7 @@ import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/db_schema.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
+import 'package:stock_count/utilis/sync_manager.dart';
 import 'package:stock_count/screens/login.dart'; // Import login screen
 
 class HomeScreen extends StatefulWidget {
@@ -62,6 +63,7 @@ class _HomeScreenState extends State<HomeScreen>
   late Animation<Offset> _slideAnimation;
   late Animation<double> _fadeAnimation;
   bool _isDialogVisible = false;
+  bool _isCloudSyncing = false;
 
   @override
   void initState() {
@@ -314,6 +316,31 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
+  Future<void> _syncToCloud() async {
+    if (_isCloudSyncing) return;
+
+    setState(() {
+      _isCloudSyncing = true;
+    });
+
+    try {
+      await SyncManager.syncToServer();
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Cloud sync completed.')),
+      );
+    } catch (e) {
+      if (!mounted) return;
+      showErrorDialog(context, "Cloud sync failed: $e");
+    } finally {
+      if (mounted) {
+        setState(() {
+          _isCloudSyncing = false;
+        });
+      }
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Stack(
@@ -329,6 +356,24 @@ class _HomeScreenState extends State<HomeScreen>
             titleSpacing: 20.0,
             title: headerTitle(),
             actions: [
+              IconButton(
+                tooltip: 'Sync Cloud',
+                onPressed: _isCloudSyncing ? null : _syncToCloud,
+                icon: _isCloudSyncing
+                    ? const SizedBox(
+                        height: 18,
+                        width: 18,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: whiteColor,
+                        ),
+                      )
+                    : const Icon(
+                        Icons.cloud_upload_outlined,
+                        color: whiteColor,
+                        size: 22.0,
+                      ),
+              ),
               IconButton(
                 padding:
                     const EdgeInsets.symmetric(horizontal: fixPadding * 2.0),
