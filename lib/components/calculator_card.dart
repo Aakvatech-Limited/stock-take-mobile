@@ -168,6 +168,7 @@ class _CalculatorCardState extends State<CalculatorCard>
               final itemCode = (row['item_code'] ?? '').toString().trim();
               if (batchNo.isNotEmpty && itemCode.isNotEmpty) {
                 batchToItem[batchNo] = itemCode;
+                batchToItem[batchNo.toUpperCase()] = itemCode;
               }
             }
           }
@@ -180,6 +181,10 @@ class _CalculatorCardState extends State<CalculatorCard>
               final batchNo = (row['batch_no'] ?? '').toString().trim();
               if (serialNo.isNotEmpty && itemCode.isNotEmpty) {
                 serialMap[serialNo] = {
+                  'item_code': itemCode,
+                  'batch_no': batchNo,
+                };
+                serialMap[serialNo.toUpperCase()] = {
                   'item_code': itemCode,
                   'batch_no': batchNo,
                 };
@@ -216,7 +221,7 @@ class _CalculatorCardState extends State<CalculatorCard>
     }
 
     if (normalizedMode == 'Batch No') {
-      final itemCode = batchToItem[scanValue];
+      final itemCode = batchToItem[scanValue] ?? batchToItem[scanValue.toUpperCase()];
       if (itemCode == null || itemCode.isEmpty) {
         showErrorDialog(
           context,
@@ -236,7 +241,7 @@ class _CalculatorCardState extends State<CalculatorCard>
     }
 
     if (normalizedMode == 'Serial No') {
-      final serialDetails = serialMap[scanValue];
+      final serialDetails = serialMap[scanValue] ?? serialMap[scanValue.toUpperCase()];
       if (serialDetails == null || (serialDetails['item_code'] ?? '').isEmpty) {
         showErrorDialog(
           context,

@@ -364,9 +364,16 @@ class _HomeScreenState extends State<HomeScreen>
       await SyncManager.fetchAndStoreAssignedItems();
       await SyncManager.fetchAndStoreScanReferenceMasters();
       await SyncManager.syncFromServer();
+      final authBox = await Hive.openBox('authBox');
+      final scope = (authBox.get('scan_reference_master_scope') ?? 'unknown')
+          .toString();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Master sync completed.')),
+        SnackBar(
+          content: Text(
+            'Master sync completed [$scope].',
+          ),
+        ),
       );
     } catch (e) {
       if (!mounted) return;
@@ -378,6 +385,135 @@ class _HomeScreenState extends State<HomeScreen>
         });
       }
     }
+  }
+
+  Future<void> _addAssignedItemWithQty(String itemCode, int qty) async {
+    if (database == null) {
+      showErrorDialog(context, 'Database is not ready.');
+      return;
+    }
+    if (!isCountStarted || currentEntryId == 0) {
+      showErrorDialog(context, 'Please start count before adding assigned items.');
+      return;
+    }
+    if (qty <= 0) {
+      showErrorDialog(context, 'Quantity must be greater than zero.');
+      return;
+    }
+
+    final warehouse = selectedWarehouse ?? widget.recountWarehouse;
+    if (warehouse == null || warehouse.isEmpty) {
+      showErrorDialog(context, 'Warehouse is missing for this entry.');
+      return;
+    }
+
+    final existingEntries = await database!.query(
+      'StockCountEntryItem',
+      where:
+          'stock_count_entry_id = ? AND scan_reference_mode = ? AND scan_value = ? AND warehouse = ?',
+      whereArgs: [currentEntryId, 'Item Code', itemCode, warehouse],
+      limit: 1,
+    );
+
+    if (existingEntries.isNotEmpty) {
+      final existingSyncUuid =
+          (existingEntries.first['sync_uuid'] ?? '').toString().trim();
+      final updateData = <String, Object?>{
+        'scan_reference_mode': 'Item Code',
+        'scan_value': itemCode,
+        'item_barcode': '',
+        'item_code': itemCode,
+        'batch_no': '',
+        'serial_no': '',
+        'qty': qty,
+        'synced': 0,
+      };
+      if (existingSyncUuid.isEmpty) {
+        updateData['sync_uuid'] = SyncManager.generateSyncUuid();
+      }
+
+      await database!.update(
+        'StockCountEntryItem',
+        updateData,
+        where:
+            'stock_count_entry_id = ? AND scan_reference_mode = ? AND scan_value = ? AND warehouse = ?',
+        whereArgs: [currentEntryId, 'Item Code', itemCode, warehouse],
+      );
+    } else {
+      await database!.insert(
+        'StockCountEntryItem',
+        {
+          'stock_count_entry_id': currentEntryId,
+          'sync_uuid': SyncManager.generateSyncUuid(),
+          'scan_reference_mode': 'Item Code',
+          'scan_value': itemCode,
+          'item_barcode': '',
+          'item_code': itemCode,
+          'batch_no': '',
+          'serial_no': '',
+          'warehouse': warehouse,
+          'qty': qty,
+          'synced': 0,
+        },
+      );
+    }
+
+    await database!.update(
+      'StockCountEntry',
+      {'synced': 0},
+      where: 'id = ?',
+      whereArgs: [currentEntryId],
+    );
+
+    if (!mounted) return;
+    final notifier = Provider.of<StockTakeNotifier>(context, listen: false);
+    notifier.setScanReferenceMode('Item Code');
+    notifier.setScannedData(itemCode);
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('Added $itemCode with qty $qty')),
+    );
+  }
+
+  Future<void> _showAssignedItemQtyDialog(String itemCode) async {
+    final qtyController = TextEditingController(text: '1');
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Add Assigned Item'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(itemCode, style: semibold16Black33),
+              const SizedBox(height: 10),
+              TextField(
+                controller: qtyController,
+                keyboardType: TextInputType.number,
+                decoration: const InputDecoration(
+                  labelText: 'Quantity',
+                  border: OutlineInputBorder(),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () async {
+                final qty = int.tryParse(qtyController.text.trim()) ?? 0;
+                Navigator.of(dialogContext).pop();
+                await _addAssignedItemWithQty(itemCode, qty);
+              },
+              child: const Text('Add'),
+            ),
+          ],
+        );
+      },
+    );
   }
 
   @override
@@ -587,7 +723,7 @@ class _HomeScreenState extends State<HomeScreen>
       Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          const Text('Assigned Items', style: semibold16Black33),
+          const Text('Items', style: semibold16Black33),
           IconButton(
             icon: const Icon(Icons.arrow_forward),
             onPressed: _toggleDialog,
@@ -631,17 +767,15 @@ class _HomeScreenState extends State<HomeScreen>
                 itemCount: filteredItems.length,
                 itemBuilder: (context, index) {
                   var item = filteredItems[index];
+                  final itemCode = (item['item'] ?? '').toString();
                   return ListTile(
-                    title: Text(item['item'] ?? 'Unnamed Item',
+                    title: Text(itemCode.isNotEmpty ? itemCode : 'Unnamed Item',
                         style: medium14Black33),
-                    onTap: () {
-                      // Set scannedData in the provider and close the dialog
-                      final notifier =
-                          Provider.of<StockTakeNotifier>(context, listen: false);
-                      notifier.setScanReferenceMode('Item Code');
-                      notifier.setScannedData(item['item'] ?? '');
-                      _toggleDialog(); // Hide dialog after item is selected
-                    },
+                    subtitle: const Text('Tap to enter quantity and add'),
+                    trailing: const Icon(Icons.add_circle_outline),
+                    onTap: itemCode.isEmpty
+                        ? null
+                        : () => _showAssignedItemQtyDialog(itemCode),
                   );
                 },
               )

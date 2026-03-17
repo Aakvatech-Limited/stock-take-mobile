@@ -624,6 +624,7 @@ class SyncManager {
     }
 
     try {
+      await authBox.delete('scan_reference_masters');
       final baseUrl = await _baseUrl;
       var response = await http.post(
         Uri.parse(
@@ -647,8 +648,12 @@ class SyncManager {
             'serial_nos': message['serial_nos'] is List
                 ? message['serial_nos']
                 : <dynamic>[],
+            'scope': (message['scope'] ?? 'unknown').toString(),
+            'assigned_item_count': message['assigned_item_count'] ?? 0,
           };
           await authBox.put('scan_reference_masters', jsonEncode(payload));
+          await authBox.put('scan_reference_master_scope',
+              (payload['scope'] ?? 'unknown').toString());
         } else {
           await authBox.delete('scan_reference_masters');
           print("Unexpected response format for scan reference masters.");
@@ -658,6 +663,56 @@ class SyncManager {
       }
     } catch (e) {
       print("Error fetching scan reference masters: $e");
+    }
+  }
+
+  static Future<Map<String, int>> getCachedMasterCounts() async {
+    final authBox = await _getAuthBox();
+    final rawMasters = authBox.get('scan_reference_masters');
+    if (rawMasters == null) {
+      return {
+        'items': 0,
+        'barcodes': 0,
+        'batches': 0,
+        'serial_nos': 0,
+        'assigned_item_count': 0,
+      };
+    }
+
+    try {
+      final decoded =
+          rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+      if (decoded is! Map<String, dynamic>) {
+        return {
+          'items': 0,
+          'barcodes': 0,
+          'batches': 0,
+          'serial_nos': 0,
+          'assigned_item_count': 0,
+        };
+      }
+      return {
+        'items': decoded['items'] is List ? (decoded['items'] as List).length : 0,
+        'barcodes':
+            decoded['barcodes'] is List ? (decoded['barcodes'] as List).length : 0,
+        'batches':
+            decoded['batches'] is List ? (decoded['batches'] as List).length : 0,
+        'serial_nos': decoded['serial_nos'] is List
+            ? (decoded['serial_nos'] as List).length
+            : 0,
+        'assigned_item_count': decoded['assigned_item_count'] is int
+            ? decoded['assigned_item_count']
+            : int.tryParse((decoded['assigned_item_count'] ?? '0').toString()) ??
+                0,
+      };
+    } catch (_) {
+      return {
+        'items': 0,
+        'barcodes': 0,
+        'batches': 0,
+        'serial_nos': 0,
+        'assigned_item_count': 0,
+      };
     }
   }
 
