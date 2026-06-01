@@ -32,15 +32,13 @@ class CalculatorCard extends StatefulWidget {
 class _CalculatorCardState extends State<CalculatorCard>
     with SingleTickerProviderStateMixin, WidgetsBindingObserver {
   final MobileScannerController scannerController = MobileScannerController();
-  String displayText = '0';
+  final TextEditingController scannedCodeController = TextEditingController();
+  final TextEditingController qtyController = TextEditingController(text: '0');
 
   bool isCameraInitialized = false;
 
   late AnimationController _animationController;
   late Animation<double> _animation;
-
-  // Track which field is active for editing
-  String activeField = 'value'; // Options: 'value' or 'scannedCode'
 
   @override
   void initState() {
@@ -61,9 +59,18 @@ class _CalculatorCardState extends State<CalculatorCard>
     // Listen for changes in scannedData to fetch entry details
     stockTakeNotifier.addListener(() {
       if (stockTakeNotifier.scannedData.isNotEmpty) {
+        if (scannedCodeController.text != stockTakeNotifier.scannedData) {
+          scannedCodeController.text = stockTakeNotifier.scannedData;
+        }
         if (mounted) {
           fetchExistingEntry();
         }
+      }
+    });
+
+    scannedCodeController.addListener(() {
+      if (stockTakeNotifier.scannedData != scannedCodeController.text) {
+        stockTakeNotifier.setScannedData(scannedCodeController.text);
       }
     });
 
@@ -79,6 +86,8 @@ class _CalculatorCardState extends State<CalculatorCard>
   @override
   void dispose() {
     scannerController.dispose();
+    scannedCodeController.dispose();
+    qtyController.dispose();
     _animationController.dispose();
     WidgetsBinding.instance.removeObserver(this);
     super.dispose();
@@ -125,7 +134,7 @@ class _CalculatorCardState extends State<CalculatorCard>
     if (!mounted) return;
 
     setState(() {
-      displayText = existingEntry.isNotEmpty
+      qtyController.text = existingEntry.isNotEmpty
           ? existingEntry.first['qty'].toString()
           : '0';
     });
@@ -255,60 +264,14 @@ class _CalculatorCardState extends State<CalculatorCard>
     };
   }
 
-  void _onButtonPressed(String label) {
-    final stockTakeNotifier =
-        Provider.of<StockTakeNotifier>(context, listen: false);
-
-    if (!mounted) return;
-
-    setState(() {
-      if (label == 'Clear') {
-        if (activeField == 'value') {
-          displayText = '0';
-        } else if (activeField == 'scannedCode') {
-          stockTakeNotifier.setScannedData('');
-        }
-      } else if (label == '<') {
-        if (activeField == 'value') {
-          if (displayText.length > 1) {
-            displayText = displayText.substring(0, displayText.length - 1);
-          } else {
-            displayText = '0';
-          }
-        } else if (activeField == 'scannedCode') {
-          String currentScannedData = stockTakeNotifier.scannedData;
-          if (currentScannedData.isNotEmpty) {
-            stockTakeNotifier.setScannedData(
-                currentScannedData.substring(0, currentScannedData.length - 1));
-          }
-        }
-      } else {
-        if (activeField == 'value') {
-          if (displayText == '0') {
-            displayText = label;
-          } else {
-            displayText += label;
-          }
-        } else if (activeField == 'scannedCode') {
-          String currentScannedData = stockTakeNotifier.scannedData;
-          if (currentScannedData == '0') {
-            stockTakeNotifier.setScannedData(label);
-          } else {
-            stockTakeNotifier.setScannedData(currentScannedData + label);
-          }
-        }
-      }
-    });
-  }
-
   void submitEntry() async {
     if (!mounted) return;
 
     final stockTakeNotifier =
         Provider.of<StockTakeNotifier>(context, listen: false);
-    final scanValue = stockTakeNotifier.scannedData.trim();
+    final scanValue = scannedCodeController.text.trim();
     final scanReferenceMode = stockTakeNotifier.scanReferenceMode.trim();
-    int quantity = int.tryParse(displayText) ?? 0;
+    int quantity = int.tryParse(qtyController.text) ?? 0;
 
     if (widget.database == null) {
       print("Database is null.");
@@ -397,7 +360,8 @@ class _CalculatorCardState extends State<CalculatorCard>
       stockTakeNotifier.setScannedData('');
       if (mounted) {
         setState(() {
-          displayText = '0';
+          qtyController.text = '0';
+          scannedCodeController.clear();
         });
       }
     }
@@ -412,43 +376,22 @@ class _CalculatorCardState extends State<CalculatorCard>
             if (stockTakeNotifier.countType == 'Beam')
               Expanded(
                 flex: 3,
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      activeField = 'scannedCode';
-                    });
-                  },
-                  child: _buildScannedCodeDisplay(
-                    stockTakeNotifier.scannedData,
-                    stockTakeNotifier.scanReferenceMode,
-                  ),
+                child: _buildScannedCodeDisplay(
+                  stockTakeNotifier.scannedData,
+                  stockTakeNotifier.scanReferenceMode,
                 ),
               ),
             if (stockTakeNotifier.countType == 'Camera')
               Expanded(
                 flex: 3,
-                child: GestureDetector(
-                  onTap: () {
-                    setState(() {
-                      activeField = 'scannedCode';
-                    });
-                  },
-                  child: _buildCameraView(
-                    stockTakeNotifier.scannedData,
-                    stockTakeNotifier.scanReferenceMode,
-                  ),
+                child: _buildCameraView(
+                  stockTakeNotifier.scannedData,
+                  stockTakeNotifier.scanReferenceMode,
                 ),
               ),
             Expanded(
               flex: 6,
-              child: GestureDetector(
-                onTap: () {
-                  setState(() {
-                    activeField = 'value';
-                  });
-                },
-                child: buildCalculator(),
-              ),
+              child: buildForm(),
             ),
           ],
         );
@@ -471,21 +414,12 @@ class _CalculatorCardState extends State<CalculatorCard>
                   size: 48, color: Theme.of(context).primaryColor),
             ),
             const SizedBox(height: 20),
-            GestureDetector(
-              onTap: () {
-                setState(() {
-                  activeField = 'scannedCode';
-                });
-              },
-              child: Text(
-                '[$modeLabel] Scanned Code: $scannedData',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: activeField == 'scannedCode'
-                      ? Colors.blue
-                      : Colors.black54,
-                ),
+            Text(
+              '[$modeLabel] Scanned Code: $scannedData',
+              style: const TextStyle(
+                fontSize: 18,
+                fontWeight: FontWeight.bold,
+                color: Colors.black54,
               ),
             ),
           ],
@@ -524,24 +458,15 @@ class _CalculatorCardState extends State<CalculatorCard>
                   filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
                   child: Consumer<StockTakeNotifier>(
                     builder: (context, stockTakeNotifier, child) {
-                      return GestureDetector(
-                        onTap: () {
-                          setState(() {
-                            activeField = 'scannedCode';
-                          });
-                        },
-                        child: Container(
-                          color: Colors.white.withAlpha(128),
-                          padding: const EdgeInsets.all(8),
-                          child: Text(
-                            '[$modeLabel] Scanned Data: $scannedData',
-                            textAlign: TextAlign.center,
-                            style: TextStyle(
-                              fontSize: 18,
-                              color: activeField == 'scannedCode'
-                                  ? Colors.blue
-                                  : Colors.black,
-                            ),
+                      return Container(
+                        color: Colors.white.withAlpha(128),
+                        padding: const EdgeInsets.all(8),
+                        child: Text(
+                          '[$modeLabel] Scanned Data: $scannedData',
+                          textAlign: TextAlign.center,
+                          style: const TextStyle(
+                            fontSize: 18,
+                            color: Colors.black,
                           ),
                         ),
                       );
@@ -556,9 +481,9 @@ class _CalculatorCardState extends State<CalculatorCard>
     );
   }
 
-  Widget buildCalculator() {
+  Widget buildForm() {
     return Container(
-      padding: const EdgeInsets.all(8.0),
+      padding: const EdgeInsets.all(16.0),
       margin: const EdgeInsets.all(8.0),
       decoration: BoxDecoration(
         color: Colors.white,
@@ -571,57 +496,36 @@ class _CalculatorCardState extends State<CalculatorCard>
         ],
       ),
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Container(
-            padding: const EdgeInsets.symmetric(vertical: 10.0),
-            alignment: Alignment.centerRight,
-            child: GestureDetector(
-              onTap: () {
-                setState(() {
-                  activeField = 'value';
-                });
-              },
-              child: Text(
-                displayText,
-                style: TextStyle(
-                  fontSize: 24.0,
-                  fontWeight: FontWeight.bold,
-                  color: activeField == 'value' ? Colors.blue : Colors.black,
-                ),
+          TextFormField(
+            controller: scannedCodeController,
+            decoration: InputDecoration(
+              labelText: 'Scanned Code',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8.0),
               ),
+              prefixIcon: const Icon(Icons.qr_code),
             ),
+            keyboardType: TextInputType.text,
           ),
-          Expanded(
-            child: GridView.count(
-              crossAxisCount: 3,
-              childAspectRatio: 2,
-              mainAxisSpacing: 10,
-              crossAxisSpacing: 10,
-              children: List.generate(12, (index) {
-                List<String> buttons = [
-                  '1',
-                  '2',
-                  '3',
-                  '4',
-                  '5',
-                  '6',
-                  '7',
-                  '8',
-                  '9',
-                  'Clear',
-                  '0',
-                  '<'
-                ];
-                return CalculatorButton(
-                  label: buttons[index],
-                  onTap: () => _onButtonPressed(buttons[index]),
-                );
-              }),
+          const SizedBox(height: 16),
+          TextFormField(
+            controller: qtyController,
+            decoration: InputDecoration(
+              labelText: 'Quantity',
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(8.0),
+              ),
+              prefixIcon: const Icon(Icons.numbers),
             ),
+            keyboardType: TextInputType.number,
           ),
+          const Spacer(),
           InkWell(
             onTap: submitEntry,
             child: Container(
+              width: double.infinity,
               decoration: BoxDecoration(
                 borderRadius: BorderRadius.circular(10),
                 color: screenBgColor,
@@ -635,36 +539,6 @@ class _CalculatorCardState extends State<CalculatorCard>
             ),
           )
         ],
-      ),
-    );
-  }
-}
-
-class CalculatorButton extends StatelessWidget {
-  final String label;
-  final VoidCallback onTap;
-
-  const CalculatorButton({
-    Key? key,
-    required this.label,
-    required this.onTap,
-  }) : super(key: key);
-
-  @override
-  Widget build(BuildContext context) {
-    return InkWell(
-      onTap: onTap,
-      child: Container(
-        decoration: BoxDecoration(
-          borderRadius: BorderRadius.circular(10),
-          color: screenBgColor,
-        ),
-        alignment: Alignment.center,
-        padding: const EdgeInsets.all(8.0),
-        child: Text(
-          label,
-          style: semibold16Black33,
-        ),
       ),
     );
   }
