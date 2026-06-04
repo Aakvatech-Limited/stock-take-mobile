@@ -460,6 +460,141 @@ class _HomeScreenState extends State<HomeScreen>
     searchController.dispose();
   }
 
+  Future<List<Map<String, dynamic>>> _loadMasterBatchesFromCache() async {
+    var authBox = await Hive.openBox('authBox');
+    final rawMasters = authBox.get('scan_reference_masters');
+    if (rawMasters == null) return <Map<String, dynamic>>[];
+
+    try {
+      final decoded = rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+      if (decoded is! Map<String, dynamic>) return <Map<String, dynamic>>[];
+      final rawBatches = decoded['batches'];
+      final batches = <Map<String, dynamic>>[];
+      if (rawBatches is List) {
+        for (final row in rawBatches.whereType<Map>()) {
+          final batchNo = (row['batch_no'] ?? '').toString().trim();
+          final itemCode = (row['item_code'] ?? '').toString().trim();
+          if (batchNo.isEmpty) continue;
+          batches.add({
+            'batch_no': batchNo,
+            'item_code': itemCode,
+          });
+        }
+      }
+      batches.sort((a, b) =>
+          (a['batch_no'] as String).compareTo((b['batch_no'] as String)));
+      return batches;
+    } catch (_) {
+      return <Map<String, dynamic>>[];
+    }
+  }
+
+  Future<void> _showBatchNoPickerForCounting() async {
+    final batches = await _loadMasterBatchesFromCache();
+    if (!mounted) return;
+    if (batches.isEmpty) {
+      showErrorDialog(context, 'No master batches found. Please pull masters first.');
+      return;
+    }
+
+    final notifier = Provider.of<StockTakeNotifier>(context, listen: false);
+    final searchController = TextEditingController();
+    String query = '';
+
+    await showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: whiteColor,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (sheetContext) {
+        return StatefulBuilder(
+          builder: (context, setModalState) {
+            final filtered = batches.where((batch) {
+              final batchNo = (batch['batch_no'] ?? '').toString().toLowerCase();
+              final itemCode = (batch['item_code'] ?? '').toString().toLowerCase();
+              final q = query.toLowerCase();
+              return batchNo.contains(q) || itemCode.contains(q);
+            }).toList();
+
+            return SafeArea(
+              child: SizedBox(
+                height: MediaQuery.of(sheetContext).size.height * 0.75,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 14, 8, 8),
+                      child: Row(
+                        children: [
+                          const Expanded(
+                            child: Text('Batches', style: semibold16Black33),
+                          ),
+                          IconButton(
+                            onPressed: () => Navigator.of(sheetContext).pop(),
+                            icon: const Icon(Icons.close),
+                          ),
+                        ],
+                      ),
+                    ),
+                    Padding(
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      child: TextField(
+                        controller: searchController,
+                        onChanged: (value) => setModalState(() => query = value),
+                        decoration: InputDecoration(
+                          hintText: 'Search batch no or item code',
+                          prefixIcon: const Icon(Icons.search),
+                          suffixIcon: query.isNotEmpty
+                              ? IconButton(
+                                  onPressed: () {
+                                    searchController.clear();
+                                    setModalState(() => query = '');
+                                  },
+                                  icon: const Icon(Icons.clear),
+                                )
+                              : null,
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                    Expanded(
+                      child: filtered.isEmpty
+                          ? const Center(child: Text('No matching batches'))
+                          : ListView.separated(
+                              itemCount: filtered.length,
+                              separatorBuilder: (_, __) => const Divider(height: 1),
+                              itemBuilder: (context, index) {
+                                final batch = filtered[index];
+                                final batchNo = (batch['batch_no'] ?? '').toString();
+                                final itemCode = (batch['item_code'] ?? '').toString();
+                                return ListTile(
+                                  title: Text(batchNo, style: medium14Black33),
+                                  subtitle: itemCode.isNotEmpty ? Text('Item: $itemCode') : null,
+                                  trailing: const Icon(Icons.chevron_right),
+                                  onTap: () {
+                                    notifier.setScannedData(batchNo);
+                                    Navigator.of(sheetContext).pop();
+                                  },
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+
+    searchController.dispose();
+  }
+
   Future<void> _syncToCloud() async {
     if (_isCloudSyncing) return;
 
@@ -651,9 +786,10 @@ class _HomeScreenState extends State<HomeScreen>
   @override
   Widget build(BuildContext context) {
     final stockTakeNotifier = context.watch<StockTakeNotifier>();
-    final showItemPickerAction = isCountStarted &&
+    final currentMode = stockTakeNotifier.scanReferenceMode.trim();
+    final showPickerAction = isCountStarted &&
         _selectedIndex == 0 &&
-        stockTakeNotifier.scanReferenceMode.trim() == 'Item Code';
+        (currentMode == 'Item Code' || currentMode == 'Batch No');
 
     return Stack(
       children: [
@@ -668,10 +804,12 @@ class _HomeScreenState extends State<HomeScreen>
             titleSpacing: 20.0,
             title: headerTitle(),
             actions: [
-              if (showItemPickerAction)
+              if (showPickerAction)
                 IconButton(
-                  tooltip: 'Items',
-                  onPressed: _showItemCodePickerForCounting,
+                  tooltip: currentMode == 'Item Code' ? 'Items' : 'Batches',
+                  onPressed: currentMode == 'Item Code'
+                      ? _showItemCodePickerForCounting
+                      : _showBatchNoPickerForCounting,
                   icon: const Icon(
                     Icons.list_alt_rounded,
                     color: whiteColor,
