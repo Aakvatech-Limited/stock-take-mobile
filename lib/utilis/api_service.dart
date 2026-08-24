@@ -5,7 +5,7 @@ import 'package:stock_count/config.dart';
 import 'package:stock_count/screens/home.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
-import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stock_count/utilis/sync_manager.dart'; // Import SyncManager to fetch user data
 
 class ApiService {
@@ -58,11 +58,12 @@ class ApiService {
           final expiresIn =
               responseData['expires_in']; // Expiry time in seconds
 
-          // Save tokens to Hive
-          var authBox = Hive.box('authBox');
-          await authBox.put('accessToken', accessToken);
-          await authBox.put('refreshToken', refreshToken);
-          await authBox.put('tokenExpiry',
+          // Save tokens to SharedPreferences
+          final prefs = await SharedPreferences.getInstance();
+          await prefs.setString('accessToken', accessToken);
+          await prefs.setString('refreshToken', refreshToken ?? '');
+          await prefs.setString(
+              'tokenExpiry',
               DateTime.now().add(Duration(seconds: expiresIn)).toString());
 
           // Fetch user information
@@ -76,10 +77,10 @@ class ApiService {
           if (userInfoResponse.statusCode == 200) {
             final userInfo = jsonDecode(userInfoResponse.body);
 
-            await authBox.put('userId', userInfo['email']);
+            await prefs.setString('userId', userInfo['email'] ?? '');
 
-            // Store user details in Hive
-            await authBox.put('userDetails', jsonEncode(userInfo));
+            // Store user details in SharedPreferences
+            await prefs.setString('userDetails', jsonEncode(userInfo));
 
             // Fetch user-specific data (warehouses, companies, masters)
             await fetchUserSpecificData();

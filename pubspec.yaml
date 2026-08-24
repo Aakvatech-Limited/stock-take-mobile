@@ -50,8 +50,6 @@ dependencies:
   lottie:
   internet_connection_checker:
   # Using simple Timer for periodic sync instead of background services
-  hive: ^2.2.3
-  hive_flutter: ^1.1.0
 
 dev_dependencies:
   flutter_test:

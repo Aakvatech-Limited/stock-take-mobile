@@ -4,7 +4,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:mobile_scanner/mobile_scanner.dart';
 import 'package:sqflite/sqflite.dart';
-import 'package:hive/hive.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/sync_manager.dart';
@@ -143,9 +143,9 @@ class _CalculatorCardState extends State<CalculatorCard>
   Future<Map<String, dynamic>?> _resolveScanReference(
       String scanValue, String scanReferenceMode) async {
     final normalizedMode = scanReferenceMode.trim();
-    final authBox = await Hive.openBox('authBox');
+    final prefs = await SharedPreferences.getInstance();
 
-    final rawMasters = authBox.get('scan_reference_masters');
+    final rawMasters = prefs.getString('scan_reference_masters');
     final batchToItem = <String, String>{};
     final serialMap = <String, Map<String, String>>{};
     final barcodeToItem = <String, String>{};

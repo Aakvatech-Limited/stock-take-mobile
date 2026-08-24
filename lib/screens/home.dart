@@ -6,7 +6,7 @@ import 'package:iconify_flutter/icons/carbon.dart';
 import 'package:provider/provider.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
-import 'package:hive/hive.dart'; // Hive for token management
+import 'package:shared_preferences/shared_preferences.dart';
 
 import 'package:stock_count/components/calculator_card.dart';
 import 'package:stock_count/components/center_box.dart';
@@ -111,10 +111,9 @@ class _HomeScreenState extends State<HomeScreen>
 
   // Check if the user is authenticated by verifying the token
   Future<void> checkAuthentication() async {
-    var authBox = await Hive.openBox('authBox');
-    String? accessToken = authBox.get('accessToken');
-    String? tokenExpiryString =
-        authBox.get('tokenExpiry'); // Retrieve as String
+    final prefs = await SharedPreferences.getInstance();
+    String? accessToken = prefs.getString('accessToken');
+    String? tokenExpiryString = prefs.getString('tokenExpiry');
 
     DateTime? tokenExpiry;
 
@@ -125,6 +124,7 @@ class _HomeScreenState extends State<HomeScreen>
 
     // If no token or token is expired, redirect to login
     if (accessToken == null ||
+        accessToken.isEmpty ||
         tokenExpiry == null ||
         DateTime.now().isAfter(tokenExpiry)) {
       // Token is invalid or expired, log out and redirect to login
@@ -136,10 +136,14 @@ class _HomeScreenState extends State<HomeScreen>
     fetchUserDetails();
   }
 
-  // Log out user and clear Hive token data
+  // Log out user and clear stored token data
   void logOutUser() async {
-    var authBox = await Hive.openBox('authBox');
-    await authBox.clear(); // Clear all stored token data
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.remove('accessToken');
+    await prefs.remove('refreshToken');
+    await prefs.remove('tokenExpiry');
+    await prefs.remove('userId');
+    await prefs.remove('userDetails');
 
     // Navigate to login screen
     Navigator.pushAndRemoveUntil(
@@ -150,11 +154,11 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<void> fetchUserDetails() async {
-    var authBox = await Hive.openBox('authBox');
-    String? userDetailsJson = authBox.get('userDetails');
-    accessToken = authBox.get('accessToken');
+    final prefs = await SharedPreferences.getInstance();
+    String? userDetailsJson = prefs.getString('userDetails');
+    accessToken = prefs.getString('accessToken');
 
-    if (userDetailsJson != null) {
+    if (userDetailsJson != null && userDetailsJson.isNotEmpty) {
       Map<String, dynamic> userDetails = json.decode(userDetailsJson);
 
       setState(() {
@@ -181,8 +185,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void startCount() async {
-    var authBox = await Hive.openBox('authBox');
-    String? userId = authBox.get('userId');
+    final prefs = await SharedPreferences.getInstance();
+    String? userId = prefs.getString('userId');
     final stockTakeNotifier =
         Provider.of<StockTakeNotifier>(context, listen: false);
 
@@ -196,7 +200,7 @@ class _HomeScreenState extends State<HomeScreen>
       'posting_date': postingDate,
       'posting_time': postingTime,
       'scan_reference_mode': stockTakeNotifier.scanReferenceMode,
-      'stock_count_person': userId
+      'stock_count_person': userId ?? ''
     });
 
     setState(() {
@@ -262,39 +266,6 @@ class _HomeScreenState extends State<HomeScreen>
             'Count type' &&
         _selectedIndex == 0 &&
         index != 1) {
-      showErrorDialog(context, "Please select the Count type first.");
-      return;
-    }
-
-    if (index == 0 && !isCountStarted && _selectedIndex != 1) {
-      // Fetch both warehouses and companies from Hive storage
-      var authBox = await Hive.openBox('authBox'); // Ensure Hive box is open
-
-      String? warehousesJson = authBox.get('warehouses_by_company');
-      String? companiesJson = authBox.get('companies');
-
-      if (warehousesJson != null && companiesJson != null) {
-        Map<String, List<String>> warehousesByCompany = {};
-        (jsonDecode(warehousesJson) as Map<String, dynamic>)
-            .forEach((key, value) {
-          warehousesByCompany[key] = List<String>.from(value as List<dynamic>);
-        });
-
-        List<String> companies = List<String>.from(jsonDecode(companiesJson));
-
-        if (warehousesByCompany.isNotEmpty) {
-          showWarehouseBottomSheet(context, warehousesByCompany, companies);
-        }
-      } else {
-        // Optional: handle the case where no data is found in Hive
-        showErrorDialog(
-            context, 'No warehouse or company data found in local storage.');
-      }
-      return;
-    } else if (isCountStarted && index == 1) {
-      showErrorDialog(context, "Please stop the count first.");
-      return;
-    } else if (isCountStarted) {
       setState(() {
         isCountStarted = false;
         showCountTypeButton = true;
@@ -321,8 +292,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<List<Map<String, dynamic>>> _loadMasterItemsFromCache() async {
-    var authBox = await Hive.openBox('authBox');
-    final rawMasters = authBox.get('scan_reference_masters');
+    final prefs = await SharedPreferences.getInstance();
+    final rawMasters = prefs.getString('scan_reference_masters');
     if (rawMasters == null) return <Map<String, dynamic>>[];
 
     try {
@@ -461,8 +432,8 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   Future<List<Map<String, dynamic>>> _loadMasterBatchesFromCache() async {
-    var authBox = await Hive.openBox('authBox');
-    final rawMasters = authBox.get('scan_reference_masters');
+    final prefs = await SharedPreferences.getInstance();
+    final rawMasters = prefs.getString('scan_reference_masters');
     if (rawMasters == null) return <Map<String, dynamic>>[];
 
     try {
@@ -631,8 +602,8 @@ class _HomeScreenState extends State<HomeScreen>
       await SyncManager.fetchAndStoreWarehousesAndCompanies();
       await SyncManager.fetchAndStoreScanReferenceMasters();
       await SyncManager.syncFromServer();
-      final authBox = await Hive.openBox('authBox');
-      final scope = (authBox.get('scan_reference_master_scope') ?? 'unknown')
+      final prefs = await SharedPreferences.getInstance();
+      final scope = (prefs.getString('scan_reference_master_scope') ?? 'unknown')
           .toString();
       if (!mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(

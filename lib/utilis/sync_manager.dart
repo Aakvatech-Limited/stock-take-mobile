@@ -1,6 +1,6 @@
 import 'package:stock_count/config.dart';
 import 'package:http/http.dart' as http;
-import 'package:hive/hive.dart'; // Hive for token management
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'dart:convert';
 import 'dart:math';
@@ -19,14 +19,6 @@ class SyncManager {
       onCreate: DBSchema.initDB,
       onUpgrade: DBSchema.onUpgrade,
     );
-  }
-
-  // Ensure that the 'authBox' is open before accessing it
-  static Future<Box> _getAuthBox() async {
-    if (!Hive.isBoxOpen('authBox')) {
-      return await Hive.openBox('authBox');
-    }
-    return Hive.box('authBox');
   }
 
   static String generateSyncUuid() {
@@ -70,12 +62,13 @@ class SyncManager {
 
   // Sync to server without refreshing token automatically
   static Future<void> syncToServer() async {
-    var authBox = await _getAuthBox(); // Ensure box is open
-    String? accessToken = authBox.get('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(authBox.get('tokenExpiry') ?? '');
+    final prefs = await SharedPreferences.getInstance();
+    String? accessToken = prefs.getString('accessToken');
+    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
 
     // Proceed only if token is still valid
     if (accessToken == null ||
+        accessToken.isEmpty ||
         tokenExpiry == null ||
         DateTime.now().isAfter(tokenExpiry)) {
       print("Access token is either missing or expired. Sync aborted.");
@@ -152,9 +145,6 @@ class SyncManager {
                 'serial_no': serialNoPayload,
                 'warehouse': item['warehouse'],
                 'qty': item['qty'],
-                // If you have item_name and item_code locally, include them
-                // Otherwise, you may need to fetch or map them accordingly
-                // For now, we'll omit them as they're not in local schema
               };
             }).toList(),
           });
@@ -198,7 +188,6 @@ class SyncManager {
               if (syncedEntryUuid.isEmpty) {
                 continue;
               }
-              // Update local entries with server_id and mark as synced
               await db.update(
                 'StockCountEntry',
                 {
@@ -210,8 +199,6 @@ class SyncManager {
                 whereArgs: [syncedEntryUuid],
               );
 
-              // Update associated items
-              // Assuming the server response includes item mappings
               List<dynamic> syncedItems = syncedEntry['items'] ?? [];
 
               for (var syncedItem in syncedItems) {
@@ -226,8 +213,6 @@ class SyncManager {
                     'synced': 1,
                     'server_id': syncedItem['server_id'],
                     'last_sync_time': DateTime.now().toIso8601String(),
-                    // 'current_qty' is not present locally; handle accordingly
-                    // 'item_name' and 'item_code' are not present locally; handle if needed
                   },
                   where: 'sync_uuid = ?',
                   whereArgs: [syncedItemUuid],
@@ -255,12 +240,13 @@ class SyncManager {
 
   // Revised syncFromServer method based on server_id
   static Future<void> syncFromServer() async {
-    var authBox = await _getAuthBox(); // Ensure box is open
-    String? accessToken = authBox.get('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(authBox.get('tokenExpiry') ?? '');
+    final prefs = await SharedPreferences.getInstance();
+    String? accessToken = prefs.getString('accessToken');
+    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
 
     // Proceed only if token is still valid
     if (accessToken == null ||
+        accessToken.isEmpty ||
         tokenExpiry == null ||
         DateTime.now().isAfter(tokenExpiry)) {
       print("Access token is either missing or expired. Sync aborted.");
@@ -367,7 +353,6 @@ class SyncManager {
               whereArgs: [serverId],
             );
 
-            // Update associated items for the existing entry
             List<dynamic> entryItems = entry['items'] ?? [];
             for (var item in entryItems) {
               String? itemServerId = item['name'];
@@ -381,7 +366,6 @@ class SyncManager {
                       item['serial_no'] ??
                       '')
                   .toString();
-              // Check if item exists
               List<Map<String, dynamic>> localItem = await db.query(
                 'StockCountEntryItem',
                 where: 'server_id = ?',
@@ -389,7 +373,6 @@ class SyncManager {
               );
 
               if (localItem.isEmpty) {
-                // Insert new item
                 await db.insert(
                   'StockCountEntryItem',
                   {
@@ -462,13 +445,14 @@ class SyncManager {
     return null;
   }
 
-  // Method to fetch and store warehouses and companies in Hive
+  // Method to fetch and store warehouses and companies in SharedPreferences
   static Future<void> fetchAndStoreWarehousesAndCompanies() async {
-    var authBox = await _getAuthBox();
-    String? accessToken = authBox.get('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(authBox.get('tokenExpiry') ?? '');
+    final prefs = await SharedPreferences.getInstance();
+    String? accessToken = prefs.getString('accessToken');
+    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
 
     if (accessToken == null ||
+        accessToken.isEmpty ||
         tokenExpiry == null ||
         DateTime.now().isAfter(tokenExpiry)) {
       print("Access token is either missing or expired. Sync aborted.");
@@ -476,8 +460,8 @@ class SyncManager {
     }
 
     // Clear previous data
-    await authBox.delete('warehouses_by_company');
-    await authBox.delete('companies');
+    await prefs.remove('warehouses_by_company');
+    await prefs.remove('companies');
     print(
         "Cleared previous warehouse and company data before fetching new ones.");
 
@@ -495,7 +479,6 @@ class SyncManager {
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
 
-        // Process and store in Hive
         if (data['message'] != null &&
             data['message']['warehouses_by_company'] != null &&
             data['message']['companies'] != null) {
@@ -509,11 +492,11 @@ class SyncManager {
           List<String> companies =
               List<String>.from(data['message']['companies']);
 
-          await authBox.put(
+          await prefs.setString(
               'warehouses_by_company', jsonEncode(warehousesByCompany));
-          await authBox.put('companies', jsonEncode(companies));
+          await prefs.setString('companies', jsonEncode(companies));
 
-          print("Warehouses and companies stored in Hive.");
+          print("Warehouses and companies stored in SharedPreferences.");
         } else {
           print("Unexpected response format for warehouses and companies.");
         }
@@ -527,11 +510,12 @@ class SyncManager {
 
   // Method to fetch and store offline scan reference masters for Item/Batch/Serial modes
   static Future<void> fetchAndStoreScanReferenceMasters() async {
-    var authBox = await _getAuthBox();
-    String? accessToken = authBox.get('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(authBox.get('tokenExpiry') ?? '');
+    final prefs = await SharedPreferences.getInstance();
+    String? accessToken = prefs.getString('accessToken');
+    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
 
     if (accessToken == null ||
+        accessToken.isEmpty ||
         tokenExpiry == null ||
         DateTime.now().isAfter(tokenExpiry)) {
       print("Access token is either missing or expired. Sync aborted.");
@@ -539,7 +523,7 @@ class SyncManager {
     }
 
     try {
-      await authBox.delete('scan_reference_masters');
+      await prefs.remove('scan_reference_masters');
       final baseUrl = await _baseUrl;
       var response = await http.post(
         Uri.parse(
@@ -566,11 +550,11 @@ class SyncManager {
             'scope': (message['scope'] ?? 'unknown').toString(),
             'item_count': message['item_count'] ?? 0,
           };
-          await authBox.put('scan_reference_masters', jsonEncode(payload));
-          await authBox.put('scan_reference_master_scope',
+          await prefs.setString('scan_reference_masters', jsonEncode(payload));
+          await prefs.setString('scan_reference_master_scope',
               (payload['scope'] ?? 'unknown').toString());
         } else {
-          await authBox.delete('scan_reference_masters');
+          await prefs.remove('scan_reference_masters');
           print("Unexpected response format for scan reference masters.");
         }
       } else {
@@ -582,8 +566,8 @@ class SyncManager {
   }
 
   static Future<Map<String, int>> getCachedMasterCounts() async {
-    final authBox = await _getAuthBox();
-    final rawMasters = authBox.get('scan_reference_masters');
+    final prefs = await SharedPreferences.getInstance();
+    final rawMasters = prefs.getString('scan_reference_masters');
     if (rawMasters == null) {
       return {
         'items': 0,
@@ -595,8 +579,7 @@ class SyncManager {
     }
 
     try {
-      final decoded =
-          rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+      final decoded = jsonDecode(rawMasters);
       if (decoded is! Map<String, dynamic>) {
         return {
           'items': 0,
@@ -630,6 +613,7 @@ class SyncManager {
       };
     }
   }
+}
 
   // Token refreshing logic for login (not used in background tasks)
   // static Future<void> refreshTokenIfNeeded() async {

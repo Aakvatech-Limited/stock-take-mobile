@@ -7,8 +7,6 @@ import 'package:stock_count/screens/login.dart';
 import 'package:stock_count/screens/setup_dialog.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/sync_manager.dart'; // Import sync manager
-import 'package:hive_flutter/hive_flutter.dart';
-import 'package:path_provider/path_provider.dart';
 import 'dart:async';
 
 // Initialize periodic sync tasks
@@ -44,18 +42,8 @@ void startPeriodicSync() {
   print("Periodic sync scheduled every 15 minutes");
 }
 
-// Initialize Hive for background tasks
-Future<void> initializeHiveForBackgroundTasks() async {
-  final appDocumentDir = await getApplicationDocumentsDirectory();
-  Hive.init(appDocumentDir.path);
-  await Hive.openBox('authBox');
-}
-
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-
-  await Hive.initFlutter();
-  await Hive.openBox('authBox');
 
   // Start periodic sync tasks if not on web
   if (!kIsWeb) {

@@ -2,7 +2,7 @@ import 'dart:async'; // For Timer
 import 'package:flutter/material.dart';
 import 'package:iconify_flutter/iconify_flutter.dart';
 import 'package:iconify_flutter/icons/uil.dart';
-import 'package:hive/hive.dart'; // For Hive storage
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/screens/entry_detail_screen.dart';
@@ -47,9 +47,9 @@ class _CenterBoxState extends State<CenterBox> {
   Future<void> fetchEntries() async {
     if (widget.database != null) {
       try {
-        var authBox = Hive.box('authBox');
-        String? userDetailsJson = authBox.get('userDetails');
-        String? stockCountPersonId = authBox.get('userId');
+        final prefs = await SharedPreferences.getInstance();
+        String? userDetailsJson = prefs.getString('userDetails');
+        String? stockCountPersonId = prefs.getString('userId');
 
         if (userDetailsJson != null && stockCountPersonId != null) {
           // Updated query to fetch 'server_id'
