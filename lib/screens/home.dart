@@ -297,7 +297,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (rawMasters == null) return <Map<String, dynamic>>[];
 
     try {
-      final decoded = rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+      final decoded = jsonDecode(rawMasters);
       if (decoded is! Map<String, dynamic>) return <Map<String, dynamic>>[];
       final rawItems = decoded['items'];
       final items = <Map<String, dynamic>>[];
@@ -437,7 +437,7 @@ class _HomeScreenState extends State<HomeScreen>
     if (rawMasters == null) return <Map<String, dynamic>>[];
 
     try {
-      final decoded = rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+      final decoded = jsonDecode(rawMasters);
       if (decoded is! Map<String, dynamic>) return <Map<String, dynamic>>[];
       final rawBatches = decoded['batches'];
       final batches = <Map<String, dynamic>>[];

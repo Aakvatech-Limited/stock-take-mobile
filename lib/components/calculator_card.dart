@@ -151,8 +151,7 @@ class _CalculatorCardState extends State<CalculatorCard>
     final barcodeToItem = <String, String>{};
     if (rawMasters != null) {
       try {
-        final decoded =
-            rawMasters is String ? jsonDecode(rawMasters) : rawMasters;
+        final decoded = jsonDecode(rawMasters);
         if (decoded is Map<String, dynamic>) {
           final batches = decoded['batches'];
           if (batches is List) {
