@@ -193,19 +193,34 @@ class _HomeScreenState extends State<HomeScreen>
     String postingDate = DateTime.now().toString().substring(0, 10);
     String postingTime = DateTime.now().toString().substring(11);
 
-    int id = await database!.insert('StockCountEntry', {
-      'sync_uuid': SyncManager.generateSyncUuid(),
-      'company': selectedCompany,
-      'warehouse': selectedWarehouse,
-      'posting_date': postingDate,
-      'posting_time': postingTime,
-      'scan_reference_mode': stockTakeNotifier.scanReferenceMode,
-      'stock_count_person': userId ?? ''
-    });
+    if (database == null) {
+      if (mounted) {
+        showErrorDialog(context, 'Local database is not ready. Please restart the app.');
+      }
+      return;
+    }
 
-    setState(() {
-      currentEntryId = id;
-    });
+    try {
+      final row = {
+        'sync_uuid': SyncManager.generateSyncUuid(),
+        'company': selectedCompany,
+        'warehouse': selectedWarehouse,
+        'posting_date': postingDate,
+        'posting_time': postingTime,
+        'scan_reference_mode': stockTakeNotifier.scanReferenceMode,
+        'stock_count_person': userId ?? ''
+      };
+
+      int id = await database!.insert('StockCountEntry', row);
+
+      setState(() {
+        currentEntryId = id;
+      });
+    } catch (e) {
+      if (mounted) {
+        showErrorDialog(context, 'Failed to start count: $e');
+      }
+    }
   }
 
   // Toggle the visibility of the slide-in dialog and fetch masters if counting is started
@@ -253,6 +268,9 @@ class _HomeScreenState extends State<HomeScreen>
   }
 
   void _onItemTapped(int index) async {
+    final stockTakeNotifier =
+        Provider.of<StockTakeNotifier>(context, listen: false);
+
     if (_isDialogVisible && index != 1) {
       _animationController.reverse().then((_) {
         if (!mounted) return;
@@ -262,10 +280,43 @@ class _HomeScreenState extends State<HomeScreen>
       });
     }
 
-    if (Provider.of<StockTakeNotifier>(context, listen: false).countType ==
-            'Count type' &&
+    if (stockTakeNotifier.countType == 'Count type' &&
         _selectedIndex == 0 &&
         index != 1) {
+      showErrorDialog(context, "Please select the Count type first.");
+      return;
+    }
+
+    if (index == 0 && !isCountStarted && _selectedIndex != 1) {
+      final prefs = await SharedPreferences.getInstance();
+      final warehousesJson = prefs.getString('warehouses_by_company');
+      final companiesJson = prefs.getString('companies');
+
+      if (warehousesJson != null && companiesJson != null) {
+        Map<String, List<String>> warehousesByCompany = {};
+        (jsonDecode(warehousesJson) as Map<String, dynamic>)
+            .forEach((key, value) {
+          warehousesByCompany[key] =
+              List<String>.from(value as List<dynamic>);
+        });
+
+        List<String> companies = List<String>.from(jsonDecode(companiesJson));
+
+        if (warehousesByCompany.isNotEmpty) {
+          if (!mounted) return;
+          showWarehouseBottomSheet(context, warehousesByCompany, companies);
+        } else {
+          if (!mounted) return;
+          showErrorDialog(context,
+              'No warehouses found for your account. Please pull masters or log in again.');
+        }
+      } else {
+        if (!mounted) return;
+        showErrorDialog(context,
+            'No warehouse or company data found locally. Please log in again.');
+      }
+      return;
+    } else if (isCountStarted) {
       setState(() {
         isCountStarted = false;
         showCountTypeButton = true;
@@ -274,6 +325,7 @@ class _HomeScreenState extends State<HomeScreen>
       });
       return;
     }
+
     setState(() {
       _selectedIndex = index;
     });
