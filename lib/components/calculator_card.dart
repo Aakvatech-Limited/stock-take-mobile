@@ -47,6 +47,7 @@ class _CalculatorCardState extends State<CalculatorCard>
 
   late AnimationController _animationController;
   late Animation<double> _animation;
+  late StockTakeNotifier _stockTakeNotifier;
 
   @override
   void initState() {
@@ -61,28 +62,21 @@ class _CalculatorCardState extends State<CalculatorCard>
 
     WidgetsBinding.instance.addObserver(this);
 
-    final stockTakeNotifier =
-        Provider.of<StockTakeNotifier>(context, listen: false);
+    _stockTakeNotifier = Provider.of<StockTakeNotifier>(context, listen: false);
 
-    // Listen for changes in scannedData to fetch entry details
-    stockTakeNotifier.addListener(() {
-      if (stockTakeNotifier.scannedData.isNotEmpty) {
-        if (scannedCodeController.text != stockTakeNotifier.scannedData) {
-          scannedCodeController.text = stockTakeNotifier.scannedData;
-        }
-        if (mounted) {
-          fetchExistingEntry();
-        }
-      }
-    });
+    // Listen for changes in scannedData to fetch entry details. Named (not
+    // anonymous) so dispose() can remove it — the notifier is app-wide and
+    // outlives this widget, so a leaked listener would keep firing against
+    // disposed controllers after this screen closes.
+    _stockTakeNotifier.addListener(_onStockTakeNotifierChanged);
 
     scannedCodeController.addListener(() {
-      if (stockTakeNotifier.scannedData != scannedCodeController.text) {
-        stockTakeNotifier.setScannedData(scannedCodeController.text);
+      if (_stockTakeNotifier.scannedData != scannedCodeController.text) {
+        _stockTakeNotifier.setScannedData(scannedCodeController.text);
       }
     });
 
-    final countType = stockTakeNotifier.countType;
+    final countType = _stockTakeNotifier.countType;
 
     if (countType == 'Beam') {
       SunmiScanner.onBarcodeScanned().listen((event) {
@@ -91,6 +85,16 @@ class _CalculatorCardState extends State<CalculatorCard>
     }
 
     _loadOfflineMastersForPreview();
+  }
+
+  void _onStockTakeNotifierChanged() {
+    if (!mounted) return;
+    if (_stockTakeNotifier.scannedData.isNotEmpty) {
+      if (scannedCodeController.text != _stockTakeNotifier.scannedData) {
+        scannedCodeController.text = _stockTakeNotifier.scannedData;
+      }
+      fetchExistingEntry();
+    }
   }
 
   // Loads the cached scan_reference_masters into simple lookup maps, purely
@@ -193,6 +197,7 @@ class _CalculatorCardState extends State<CalculatorCard>
 
   @override
   void dispose() {
+    _stockTakeNotifier.removeListener(_onStockTakeNotifierChanged);
     scannerController.dispose();
     scannedCodeController.dispose();
     qtyController.dispose();
