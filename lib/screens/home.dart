@@ -109,30 +109,24 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  // Check if the user is authenticated by verifying the token
+  // Check if the user is authenticated by verifying a session exists locally.
+  //
+  // This intentionally does NOT check tokenExpiry: the app is designed for
+  // offline warehouse use, and the OAuth access token (usually ~1hr expiry)
+  // will routinely go stale while offline. Server calls (SyncManager) already
+  // guard themselves against an expired token and simply skip syncing rather
+  // than failing the user out, so HomeScreen should do the same — only log
+  // out when there's no session at all (i.e. the user never logged in, or
+  // explicitly logged out).
   Future<void> checkAuthentication() async {
     final prefs = await SharedPreferences.getInstance();
     String? accessToken = prefs.getString('accessToken');
-    String? tokenExpiryString = prefs.getString('tokenExpiry');
 
-    DateTime? tokenExpiry;
-
-    // Parse the tokenExpiryString to DateTime if it's not null
-    if (tokenExpiryString != null) {
-      tokenExpiry = DateTime.parse(tokenExpiryString);
-    }
-
-    // If no token or token is expired, redirect to login
-    if (accessToken == null ||
-        accessToken.isEmpty ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      // Token is invalid or expired, log out and redirect to login
+    if (accessToken == null || accessToken.isEmpty) {
       logOutUser();
       return;
     }
 
-    // If token is valid, proceed to fetch user details
     fetchUserDetails();
   }
 

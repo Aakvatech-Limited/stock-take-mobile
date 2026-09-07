@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stock_count/config.dart';
 import 'package:stock_count/constants/theme.dart';
+import 'package:stock_count/screens/home.dart';
 import 'package:stock_count/screens/login.dart';
 import 'package:stock_count/screens/setup_dialog.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
@@ -74,6 +76,7 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   bool _isConfigured = false;
+  bool _hasSession = false;
   bool _isLoading = true;
 
   @override
@@ -85,14 +88,19 @@ class _MyAppState extends State<MyApp> {
   Future<void> _checkConfiguration() async {
     try {
       final isConfigured = await AppConfig.isConfigured;
+      final prefs = await SharedPreferences.getInstance();
+      final accessToken = prefs.getString('accessToken');
+      final hasSession = accessToken != null && accessToken.isNotEmpty;
       setState(() {
         _isConfigured = isConfigured;
+        _hasSession = hasSession;
         _isLoading = false;
       });
     } catch (e) {
       print("Error checking configuration: $e");
       setState(() {
         _isConfigured = false;
+        _hasSession = false;
         _isLoading = false;
       });
     }
@@ -119,7 +127,7 @@ class _MyAppState extends State<MyApp> {
               ),
             )
           : _isConfigured
-              ? const LoginScreen()
+              ? (_hasSession ? const HomeScreen() : const LoginScreen())
               : Builder(
                   builder: (context) {
                     // Show setup dialog on first launch
