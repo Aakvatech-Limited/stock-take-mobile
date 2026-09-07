@@ -474,7 +474,13 @@ class _HomeScreenState extends State<HomeScreen>
       },
     );
 
-    searchController.dispose();
+    // The bottom sheet's close animation can still be mid-frame for a bit
+    // after this Future resolves (the route pops before the transition
+    // finishes), so disposing the controller immediately can race with a
+    // rebuild of the still-animating-out TextField. Give it a beat.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      searchController.dispose();
+    });
 
     if (selectedItemCode != null && mounted) {
       notifier.setScannedData(selectedItemCode);
@@ -612,7 +618,11 @@ class _HomeScreenState extends State<HomeScreen>
       },
     );
 
-    searchController.dispose();
+    // Same rationale as the item-code picker: avoid disposing while the
+    // sheet's close animation may still be mid-frame.
+    Future.delayed(const Duration(milliseconds: 400), () {
+      searchController.dispose();
+    });
 
     if (selectedBatchNo != null && mounted) {
       notifier.setScannedData(selectedBatchNo);
