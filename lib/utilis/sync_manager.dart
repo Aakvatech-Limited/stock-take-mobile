@@ -446,6 +446,55 @@ class SyncManager {
     return null;
   }
 
+  // Fetches Stock Take Settings (e.g. whether the Stock Take Period picker
+  // should be shown) and caches it locally. Intentionally fail-safe: if the
+  // request fails for any reason (offline, older server without this
+  // endpoint yet, etc.) the previously cached value — or the default of
+  // "disabled" for a fresh install — is left untouched rather than being
+  // cleared, so a transient failure never toggles the UI unexpectedly.
+  static Future<void> fetchAndStoreStockTakeSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    String? accessToken = prefs.getString('accessToken');
+    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
+
+    if (accessToken == null ||
+        accessToken.isEmpty ||
+        tokenExpiry == null ||
+        DateTime.now().isAfter(tokenExpiry)) {
+      print("Access token is either missing or expired. Settings sync aborted.");
+      return;
+    }
+
+    try {
+      final baseUrl = await _baseUrl;
+      var response = await http.post(
+        Uri.parse(
+            '$baseUrl/api/method/nex_bridge.api.stock_take.get_stock_take_settings'),
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': 'Bearer $accessToken',
+        },
+      );
+
+      if (response.statusCode == 200) {
+        final data = jsonDecode(response.body);
+        if (data is Map<String, dynamic> &&
+            data['message'] is Map<String, dynamic> &&
+            data['message']['enable_stock_take_period'] is bool) {
+          await prefs.setBool('enable_stock_take_period',
+              data['message']['enable_stock_take_period'] as bool);
+          print("Stock Take Settings stored in SharedPreferences.");
+        } else {
+          print("Unexpected response format for Stock Take Settings.");
+        }
+      } else {
+        print("Failed to fetch Stock Take Settings: ${response.body}");
+      }
+    } catch (e) {
+      print("Error fetching Stock Take Settings: $e");
+    }
+  }
+
   // Method to fetch and store warehouses and companies in SharedPreferences
   static Future<void> fetchAndStoreWarehousesAndCompanies() async {
     final prefs = await SharedPreferences.getInstance();

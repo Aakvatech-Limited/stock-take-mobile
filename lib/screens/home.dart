@@ -1126,7 +1126,11 @@ class _HomeScreenState extends State<HomeScreen>
     'Dec',
   ];
 
-  void _showScanSetupDialog(BuildContext context) {
+  Future<void> _showScanSetupDialog(BuildContext context) async {
+    final prefs = await SharedPreferences.getInstance();
+    final showPeriodPicker = prefs.getBool('enable_stock_take_period') ?? false;
+    if (!context.mounted) return;
+
     final notifier = context.read<StockTakeNotifier>();
     String tempCountType = notifier.countType;
     String tempReferenceMode = notifier.scanReferenceMode;
@@ -1214,29 +1218,32 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ],
                     ),
-                    const SizedBox(height: 14),
-                    const Text('Stock Take Period', style: semibold15Black33),
-                    const SizedBox(height: 8),
-                    DropdownButtonFormField<String>(
-                      initialValue: tempPeriod.isEmpty ? null : tempPeriod,
-                      decoration: InputDecoration(
-                        hintText: 'Not set',
-                        isDense: true,
-                        contentPadding: const EdgeInsets.symmetric(
-                            horizontal: 12, vertical: 10),
-                        border: OutlineInputBorder(
-                          borderRadius: BorderRadius.circular(10),
+                    if (showPeriodPicker) ...[
+                      const SizedBox(height: 14),
+                      const Text('Stock Take Period',
+                          style: semibold15Black33),
+                      const SizedBox(height: 8),
+                      DropdownButtonFormField<String>(
+                        initialValue: tempPeriod.isEmpty ? null : tempPeriod,
+                        decoration: InputDecoration(
+                          hintText: 'Not set',
+                          isDense: true,
+                          contentPadding: const EdgeInsets.symmetric(
+                              horizontal: 12, vertical: 10),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(10),
+                          ),
                         ),
+                        items: _stockTakePeriods
+                            .map((month) => DropdownMenuItem(
+                                  value: month,
+                                  child: Text(month, style: medium14Black33),
+                                ))
+                            .toList(),
+                        onChanged: (value) =>
+                            setModalState(() => tempPeriod = value ?? ''),
                       ),
-                      items: _stockTakePeriods
-                          .map((month) => DropdownMenuItem(
-                                value: month,
-                                child: Text(month, style: medium14Black33),
-                              ))
-                          .toList(),
-                      onChanged: (value) =>
-                          setModalState(() => tempPeriod = value ?? ''),
-                    ),
+                    ],
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,

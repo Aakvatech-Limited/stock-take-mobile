@@ -26,6 +26,7 @@ void startPeriodicSync() {
     try {
       await SyncManager.fetchAndStoreWarehousesAndCompanies();
       await SyncManager.fetchAndStoreScanReferenceMasters();
+      await SyncManager.fetchAndStoreStockTakeSettings();
       await SyncManager.syncFromServer();
       print("Fetch sync completed at ${DateTime.now()}");
     } catch (e) {

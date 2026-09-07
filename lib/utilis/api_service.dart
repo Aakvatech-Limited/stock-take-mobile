@@ -112,5 +112,6 @@ class ApiService {
   static Future<void> fetchUserSpecificData() async {
     await SyncManager.fetchAndStoreWarehousesAndCompanies();
     await SyncManager.fetchAndStoreScanReferenceMasters();
+    await SyncManager.fetchAndStoreStockTakeSettings();
   }
 }
