@@ -37,6 +37,14 @@ class _CalculatorCardState extends State<CalculatorCard>
 
   bool isCameraInitialized = false;
 
+  // Offline lookup maps for the "scanned item name" preview. Loaded once
+  // from the cached scan_reference_masters so the preview can resolve
+  // instantly, with no network/db calls, as the user scans or types.
+  Map<String, String> _itemNamesByCode = {};
+  Map<String, String> _batchToItemForPreview = {};
+  Map<String, String> _barcodeToItemForPreview = {};
+  Map<String, String> _serialToItemForPreview = {};
+
   late AnimationController _animationController;
   late Animation<double> _animation;
 
@@ -81,6 +89,106 @@ class _CalculatorCardState extends State<CalculatorCard>
         _setScannedValue(event);
       });
     }
+
+    _loadOfflineMastersForPreview();
+  }
+
+  // Loads the cached scan_reference_masters into simple lookup maps, purely
+  // for the "item name" preview shown while scanning. Read-only and
+  // additive — doesn't touch the existing submit/resolve logic below.
+  Future<void> _loadOfflineMastersForPreview() async {
+    final prefs = await SharedPreferences.getInstance();
+    final rawMasters = prefs.getString('scan_reference_masters');
+    if (rawMasters == null) return;
+
+    try {
+      final decoded = jsonDecode(rawMasters);
+      if (decoded is! Map<String, dynamic>) return;
+
+      final itemNames = <String, String>{};
+      final items = decoded['items'];
+      if (items is List) {
+        for (final row in items.whereType<Map>()) {
+          final itemCode = (row['item_code'] ?? '').toString().trim();
+          final itemName = (row['item_name'] ?? '').toString().trim();
+          if (itemCode.isNotEmpty) {
+            itemNames[itemCode] = itemName.isNotEmpty ? itemName : itemCode;
+          }
+        }
+      }
+
+      final batchToItem = <String, String>{};
+      final batches = decoded['batches'];
+      if (batches is List) {
+        for (final row in batches.whereType<Map>()) {
+          final batchNo = (row['batch_no'] ?? '').toString().trim();
+          final itemCode = (row['item_code'] ?? '').toString().trim();
+          if (batchNo.isNotEmpty && itemCode.isNotEmpty) {
+            batchToItem[batchNo.toUpperCase()] = itemCode;
+          }
+        }
+      }
+
+      final barcodeToItem = <String, String>{};
+      final barcodes = decoded['barcodes'];
+      if (barcodes is List) {
+        for (final row in barcodes.whereType<Map>()) {
+          final barcode = (row['barcode'] ?? '').toString().trim();
+          final itemCode = (row['item_code'] ?? '').toString().trim();
+          if (barcode.isNotEmpty && itemCode.isNotEmpty) {
+            barcodeToItem[barcode] = itemCode;
+          }
+        }
+      }
+
+      final serialToItem = <String, String>{};
+      final serialNos = decoded['serial_nos'];
+      if (serialNos is List) {
+        for (final row in serialNos.whereType<Map>()) {
+          final serialNo = (row['serial_no'] ?? '').toString().trim();
+          final itemCode = (row['item_code'] ?? '').toString().trim();
+          if (serialNo.isNotEmpty && itemCode.isNotEmpty) {
+            serialToItem[serialNo.toUpperCase()] = itemCode;
+          }
+        }
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _itemNamesByCode = itemNames;
+        _batchToItemForPreview = batchToItem;
+        _barcodeToItemForPreview = barcodeToItem;
+        _serialToItemForPreview = serialToItem;
+      });
+    } catch (_) {
+      // Malformed/missing cache just means no preview — never block scanning.
+    }
+  }
+
+  // Resolves a scanned value to an item name using the offline cache, for
+  // instant display as the user scans/types. Returns null when unresolved
+  // (e.g. masters not synced yet, or the value doesn't match anything).
+  String? _previewItemName(String scanValue, String scanReferenceMode) {
+    final value = scanValue.trim();
+    if (value.isEmpty || _itemNamesByCode.isEmpty) return null;
+
+    String? itemCode;
+    switch (scanReferenceMode.trim()) {
+      case 'Item Code':
+        itemCode = _barcodeToItemForPreview[value] ?? value;
+        break;
+      case 'Batch No':
+        itemCode = _batchToItemForPreview[value.toUpperCase()];
+        break;
+      case 'Serial No':
+        itemCode = _serialToItemForPreview[value.toUpperCase()];
+        break;
+      default:
+        itemCode = _barcodeToItemForPreview[value];
+    }
+
+    if (itemCode == null || itemCode.isEmpty) return null;
+    return _itemNamesByCode[itemCode];
   }
 
   @override
@@ -390,7 +498,7 @@ class _CalculatorCardState extends State<CalculatorCard>
               ),
             Expanded(
               flex: 6,
-              child: buildForm(),
+              child: buildForm(stockTakeNotifier),
             ),
           ],
         );
@@ -480,7 +588,12 @@ class _CalculatorCardState extends State<CalculatorCard>
     );
   }
 
-  Widget buildForm() {
+  Widget buildForm(StockTakeNotifier stockTakeNotifier) {
+    final previewItemName = _previewItemName(
+      stockTakeNotifier.scannedData,
+      stockTakeNotifier.scanReferenceMode,
+    );
+
     return Container(
       padding: const EdgeInsets.all(16.0),
       margin: const EdgeInsets.all(8.0),
@@ -497,6 +610,40 @@ class _CalculatorCardState extends State<CalculatorCard>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 200),
+            child: previewItemName == null || previewItemName.isEmpty
+                ? const SizedBox.shrink(key: ValueKey('no-item-preview'))
+                : Container(
+                    key: ValueKey(previewItemName),
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 12),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 12, vertical: 10),
+                    decoration: BoxDecoration(
+                      color: primaryColor.withAlpha(20),
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(color: primaryColor.withAlpha(60)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.inventory_2_outlined,
+                            size: 18, color: primaryColor),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: Text(
+                            previewItemName,
+                            style: const TextStyle(
+                              fontWeight: FontWeight.w600,
+                              fontSize: 14,
+                            ),
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+          ),
           TextFormField(
             controller: scannedCodeController,
             decoration: InputDecoration(

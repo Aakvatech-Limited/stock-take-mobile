@@ -1,7 +1,7 @@
 import 'package:sqflite/sqflite.dart';
 
 class DBSchema {
-  static const int dbVersion = 4;
+  static const int dbVersion = 5;
 
   // Function to initialize the database
   static Future<void> initDB(Database db, int version) async {
@@ -16,6 +16,7 @@ class DBSchema {
         posting_time TEXT NOT NULL,
         sync_uuid TEXT,
         scan_reference_mode TEXT DEFAULT '',
+        period TEXT DEFAULT '',
         stock_count_person TEXT NOT NULL,
         synced INTEGER DEFAULT 0, -- Whether entry has been synced (0: no, 1: yes)
         last_sync_time TEXT -- Timestamp of the last sync
@@ -105,6 +106,14 @@ class DBSchema {
         SET scan_value = item_barcode
         WHERE scan_value IS NULL OR trim(scan_value) = ''
       """);
+    }
+    if (oldVersion < 5) {
+      await _addColumnIfMissing(
+        db,
+        tableName: 'StockCountEntry',
+        columnName: 'period',
+        columnTypeSql: "TEXT DEFAULT ''",
+      );
     }
   }
 

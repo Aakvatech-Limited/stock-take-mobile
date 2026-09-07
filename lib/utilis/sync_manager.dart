@@ -106,6 +106,7 @@ class SyncManager {
               'posting_date': entry['posting_date'],
               'posting_time': entry['posting_time'],
               'scan_reference_mode': entry['scan_reference_mode'] ?? '',
+              'period': entry['period'] ?? '',
             },
             'entry_items': entryItems.map((item) {
               final mode = (item['scan_reference_mode'] ??

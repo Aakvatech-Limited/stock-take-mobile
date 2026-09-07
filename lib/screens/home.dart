@@ -202,6 +202,7 @@ class _HomeScreenState extends State<HomeScreen>
         'posting_date': postingDate,
         'posting_time': postingTime,
         'scan_reference_mode': stockTakeNotifier.scanReferenceMode,
+        'period': stockTakeNotifier.period,
         'stock_count_person': userId ?? ''
       };
 
@@ -1110,10 +1111,26 @@ class _HomeScreenState extends State<HomeScreen>
     ];
   }
 
+  static const List<String> _stockTakePeriods = [
+    'Jan',
+    'Feb',
+    'Mar',
+    'Apr',
+    'May',
+    'Jun',
+    'Jul',
+    'Aug',
+    'Sep',
+    'Oct',
+    'Nov',
+    'Dec',
+  ];
+
   void _showScanSetupDialog(BuildContext context) {
     final notifier = context.read<StockTakeNotifier>();
     String tempCountType = notifier.countType;
     String tempReferenceMode = notifier.scanReferenceMode;
+    String tempPeriod = notifier.period;
 
     showModalBottomSheet(
       context: context,
@@ -1197,6 +1214,29 @@ class _HomeScreenState extends State<HomeScreen>
                         ),
                       ],
                     ),
+                    const SizedBox(height: 14),
+                    const Text('Stock Take Period', style: semibold15Black33),
+                    const SizedBox(height: 8),
+                    DropdownButtonFormField<String>(
+                      initialValue: tempPeriod.isEmpty ? null : tempPeriod,
+                      decoration: InputDecoration(
+                        hintText: 'Not set',
+                        isDense: true,
+                        contentPadding: const EdgeInsets.symmetric(
+                            horizontal: 12, vertical: 10),
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                      items: _stockTakePeriods
+                          .map((month) => DropdownMenuItem(
+                                value: month,
+                                child: Text(month, style: medium14Black33),
+                              ))
+                          .toList(),
+                      onChanged: (value) =>
+                          setModalState(() => tempPeriod = value ?? ''),
+                    ),
                     const SizedBox(height: 18),
                     SizedBox(
                       width: double.infinity,
@@ -1204,6 +1244,7 @@ class _HomeScreenState extends State<HomeScreen>
                         onPressed: () {
                           notifier.setCountType(tempCountType);
                           notifier.setScanReferenceMode(tempReferenceMode);
+                          notifier.setPeriod(tempPeriod);
                           Navigator.pop(context);
                         },
                         style: ElevatedButton.styleFrom(
