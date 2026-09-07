@@ -383,7 +383,7 @@ class _HomeScreenState extends State<HomeScreen>
     final searchController = TextEditingController();
     String query = '';
 
-    await showModalBottomSheet(
+    final selectedItemCode = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: whiteColor,
@@ -464,8 +464,7 @@ class _HomeScreenState extends State<HomeScreen>
                                       itemName.isNotEmpty ? Text(itemName) : null,
                                   trailing: const Icon(Icons.chevron_right),
                                   onTap: () {
-                                    notifier.setScannedData(itemCode);
-                                    Navigator.of(sheetContext).pop();
+                                    Navigator.of(sheetContext).pop(itemCode);
                                   },
                                 );
                               },
@@ -481,6 +480,10 @@ class _HomeScreenState extends State<HomeScreen>
     );
 
     searchController.dispose();
+
+    if (selectedItemCode != null && mounted) {
+      notifier.setScannedData(selectedItemCode);
+    }
   }
 
   Future<List<Map<String, dynamic>>> _loadMasterBatchesFromCache() async {
@@ -524,7 +527,7 @@ class _HomeScreenState extends State<HomeScreen>
     final searchController = TextEditingController();
     String query = '';
 
-    await showModalBottomSheet(
+    final selectedBatchNo = await showModalBottomSheet<String>(
       context: context,
       isScrollControlled: true,
       backgroundColor: whiteColor,
@@ -599,8 +602,7 @@ class _HomeScreenState extends State<HomeScreen>
                                   subtitle: itemCode.isNotEmpty ? Text('Item: $itemCode') : null,
                                   trailing: const Icon(Icons.chevron_right),
                                   onTap: () {
-                                    notifier.setScannedData(batchNo);
-                                    Navigator.of(sheetContext).pop();
+                                    Navigator.of(sheetContext).pop(batchNo);
                                   },
                                 );
                               },
@@ -616,6 +618,10 @@ class _HomeScreenState extends State<HomeScreen>
     );
 
     searchController.dispose();
+
+    if (selectedBatchNo != null && mounted) {
+      notifier.setScannedData(selectedBatchNo);
+    }
   }
 
   Future<void> _syncToCloud() async {
