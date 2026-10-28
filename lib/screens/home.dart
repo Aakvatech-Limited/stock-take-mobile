@@ -1060,7 +1060,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       const ListTile(
         leading: Icon(Icons.info_outline),
-        title: Text('Version 0.0.1', style: medium14Black33),
+        title: Text('Version 1.1.0', style: medium14Black33),
       ),
       const Spacer(),
       const Divider(),

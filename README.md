@@ -10,7 +10,17 @@
 
 You can download the latest APK directly from this repository:
 
-[**Download Stock Take APK**](https://github.com/Aakvatech-Limited/stock-take-mobile/raw/main/Stock-Take-Android.apk)
+[**Download Stock Take APK (v1.1.0)**](https://github.com/Aakvatech-Limited/stock-take-mobile/raw/main/Stock-Take-Android.apk)
+
+**Current version:** 1.1.0 (build 2). You can install it over an older version; your saved entries are kept.
+
+#### What's new in 1.1.0
+
+- **Decimal quantities:** You can enter quantities such as 15.5. A zero or invalid quantity now shows an error.
+- **Warehouse search:** You can search the warehouse list when you start a count.
+- **Automatic login renewal:** The app renews your session before it syncs. You do not need to log in again after one hour.
+- **Clear sync messages:** The app tells you if there is no internet, if your session expired, or if the server returned an error. Unsynced entries stay on the device.
+- **Offline safety:** A failed pull no longer clears the saved warehouses and items.
 
 After installation, you'll need to configure the app to connect to your Frappe/ERPNext server.
 
