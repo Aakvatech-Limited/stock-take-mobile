@@ -11,9 +11,11 @@ import 'package:shared_preferences/shared_preferences.dart';
 import 'package:stock_count/components/calculator_card.dart';
 import 'package:stock_count/components/center_box.dart';
 import 'package:stock_count/constants/theme.dart';
+import 'package:stock_count/utilis/auth_session.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/db_schema.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
+import 'package:stock_count/utilis/quantity.dart';
 import 'package:stock_count/utilis/sync_manager.dart';
 import 'package:stock_count/screens/login.dart'; // Import login screen
 
@@ -644,7 +646,7 @@ class _HomeScreenState extends State<HomeScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorDialog(context, "Cloud sync failed: $e");
+      _showSyncFailure("Cloud sync", e);
     } finally {
       if (mounted) {
         setState(() {
@@ -678,7 +680,7 @@ class _HomeScreenState extends State<HomeScreen>
       );
     } catch (e) {
       if (!mounted) return;
-      showErrorDialog(context, "Master sync failed: $e");
+      _showSyncFailure("Master sync", e);
     } finally {
       if (mounted) {
         setState(() {
@@ -688,7 +690,46 @@ class _HomeScreenState extends State<HomeScreen>
     }
   }
 
-  Future<void> _addMasterItemWithQty(String itemCode, int qty) async {
+  // Offline is not an error for this app: entries stay on the device. An
+  // expired session offers a way back to login; local entries are kept.
+  void _showSyncFailure(String action, Object error) {
+    if (error is SessionException && error.sessionExpired) {
+      _showSessionExpiredDialog(error.message);
+    } else if (error is SessionException) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(error.message)),
+      );
+    } else {
+      showErrorDialog(context, "$action failed: $error");
+    }
+  }
+
+  Future<void> _showSessionExpiredDialog(String message) async {
+    await showDialog(
+      context: context,
+      builder: (dialogContext) {
+        return AlertDialog(
+          title: const Text('Session expired'),
+          content: Text(message),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.of(dialogContext).pop(),
+              child: const Text('Later'),
+            ),
+            ElevatedButton(
+              onPressed: () {
+                Navigator.of(dialogContext).pop();
+                logOutUser();
+              },
+              child: const Text('Log in again'),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Future<void> _addMasterItemWithQty(String itemCode, double? qty) async {
     if (database == null) {
       showErrorDialog(context, 'Database is not ready.');
       return;
@@ -697,7 +738,7 @@ class _HomeScreenState extends State<HomeScreen>
       showErrorDialog(context, 'Please start count before adding items.');
       return;
     }
-    if (qty <= 0) {
+    if (qty == null) {
       showErrorDialog(context, 'Quantity must be greater than zero.');
       return;
     }
@@ -771,7 +812,9 @@ class _HomeScreenState extends State<HomeScreen>
     notifier.setScanReferenceMode('Item Code');
     notifier.setScannedData(itemCode);
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('Added $itemCode with qty $qty')),
+      SnackBar(
+        content: Text('Added $itemCode with qty ${formatQuantity(qty)}'),
+      ),
     );
   }
 
@@ -790,7 +833,7 @@ class _HomeScreenState extends State<HomeScreen>
               const SizedBox(height: 10),
               TextField(
                 controller: qtyController,
-                keyboardType: TextInputType.number,
+                keyboardType: quantityKeyboardType,
                 decoration: const InputDecoration(
                   labelText: 'Quantity',
                   border: OutlineInputBorder(),
@@ -805,7 +848,7 @@ class _HomeScreenState extends State<HomeScreen>
             ),
             ElevatedButton(
               onPressed: () async {
-                final qty = int.tryParse(qtyController.text.trim()) ?? 0;
+                final qty = parseQuantity(qtyController.text);
                 Navigator.of(dialogContext).pop();
                 await _addMasterItemWithQty(itemCode, qty);
               },
@@ -1017,7 +1060,7 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       const ListTile(
         leading: Icon(Icons.info_outline),
-        title: Text('Version 0.0.1', style: medium14Black33),
+        title: Text('Version 1.1.0', style: medium14Black33),
       ),
       const Spacer(),
       const Divider(),
@@ -1292,6 +1335,8 @@ class _HomeScreenState extends State<HomeScreen>
         warehousesByCompany[defaultSelectedCompany] ?? [];
     bool isCompanyExpanded = false;
     bool isWarehouseExpanded = true;
+    final searchController = TextEditingController();
+    String query = '';
 
     showModalBottomSheet(
       context: context,
@@ -1302,9 +1347,16 @@ class _HomeScreenState extends State<HomeScreen>
       ),
       builder: (BuildContext context) {
         return StatefulBuilder(
-          builder: (BuildContext context, StateSetter setState) {
+          builder: (BuildContext context, StateSetter setModalState) {
+            final q = query.trim().toLowerCase();
+            final matchingWarehouses = filteredWarehouses
+                .where((warehouse) => warehouse.toLowerCase().contains(q))
+                .toList();
+
+            // Bottom inset lifts the sheet above the keyboard while searching.
             return Padding(
-              padding: const EdgeInsets.all(16.0),
+              padding: EdgeInsets.fromLTRB(16.0, 16.0, 16.0,
+                  16.0 + MediaQuery.viewInsetsOf(context).bottom),
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -1315,7 +1367,7 @@ class _HomeScreenState extends State<HomeScreen>
                   // Accordion for Company Selection
                   GestureDetector(
                     onTap: () {
-                      setState(() {
+                      setModalState(() {
                         isCompanyExpanded = !isCompanyExpanded;
                       });
                     },
@@ -1357,7 +1409,7 @@ class _HomeScreenState extends State<HomeScreen>
                         return ListTile(
                           title: Text(companies[index], style: medium14Black33),
                           onTap: () {
-                            setState(() {
+                            setModalState(() {
                               defaultSelectedCompany = companies[index];
                               filteredWarehouses =
                                   warehousesByCompany[defaultSelectedCompany] ??
@@ -1374,7 +1426,7 @@ class _HomeScreenState extends State<HomeScreen>
                   // Accordion for Warehouse List
                   GestureDetector(
                     onTap: () {
-                      setState(() {
+                      setModalState(() {
                         isWarehouseExpanded = !isWarehouseExpanded;
                       });
                     },
@@ -1401,6 +1453,31 @@ class _HomeScreenState extends State<HomeScreen>
                   ),
                   const SizedBox(height: 16.0),
 
+                  if (isWarehouseExpanded) ...[
+                    TextField(
+                      controller: searchController,
+                      onChanged: (value) =>
+                          setModalState(() => query = value),
+                      decoration: InputDecoration(
+                        hintText: 'Search warehouse',
+                        prefixIcon: const Icon(Icons.search),
+                        suffixIcon: query.isNotEmpty
+                            ? IconButton(
+                                onPressed: () {
+                                  searchController.clear();
+                                  setModalState(() => query = '');
+                                },
+                                icon: const Icon(Icons.clear),
+                              )
+                            : null,
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(10),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 10),
+                  ],
+
                   // Limited Height and Scrollable Warehouse List
                   Flexible(
                     child: AnimatedContainer(
@@ -1408,26 +1485,29 @@ class _HomeScreenState extends State<HomeScreen>
                       height: isWarehouseExpanded
                           ? MediaQuery.of(context).size.height * 0.5
                           : 0,
-                      child: ListView.builder(
-                        shrinkWrap: true,
-                        itemCount: filteredWarehouses.length,
-                        itemBuilder: (BuildContext context, int index) {
-                          return ListTile(
-                            title: Text(filteredWarehouses[index],
-                                style: medium14Black33),
-                            onTap: () {
-                              Navigator.of(context).pop();
-                              setState(() {
-                                selectedWarehouse = filteredWarehouses[index];
-                                selectedCompany = defaultSelectedCompany;
-                                isCountStarted = true;
-                                showCountTypeButton = false;
-                              });
-                              startCount();
-                            },
-                          );
-                        },
-                      ),
+                      child: matchingWarehouses.isEmpty && q.isNotEmpty
+                          ? const Center(child: Text('No matching warehouses'))
+                          : ListView.builder(
+                              shrinkWrap: true,
+                              itemCount: matchingWarehouses.length,
+                              itemBuilder: (BuildContext context, int index) {
+                                final warehouse = matchingWarehouses[index];
+                                return ListTile(
+                                  title:
+                                      Text(warehouse, style: medium14Black33),
+                                  onTap: () {
+                                    Navigator.of(context).pop();
+                                    setState(() {
+                                      selectedWarehouse = warehouse;
+                                      selectedCompany = defaultSelectedCompany;
+                                      isCountStarted = true;
+                                      showCountTypeButton = false;
+                                    });
+                                    startCount();
+                                  },
+                                );
+                              },
+                            ),
                     ),
                   ),
                 ],
@@ -1436,7 +1516,13 @@ class _HomeScreenState extends State<HomeScreen>
           },
         );
       },
-    );
+    ).whenComplete(() {
+      // Same rationale as the item-code picker: avoid disposing while the
+      // sheet's close animation may still be mid-frame.
+      Future.delayed(const Duration(milliseconds: 400), () {
+        searchController.dispose();
+      });
+    });
   }
 
   String _scanSetupLabel(StockTakeNotifier notifier) {
