@@ -6,6 +6,7 @@ import 'package:stock_count/screens/home.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
 import 'package:flutter_web_auth_2/flutter_web_auth_2.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:stock_count/utilis/auth_session.dart';
 import 'package:stock_count/utilis/sync_manager.dart'; // Import SyncManager to fetch user data
 
 class ApiService {
@@ -53,18 +54,10 @@ class ApiService {
         if (tokenResponse.statusCode == 200) {
           final Map<String, dynamic> responseData =
               jsonDecode(tokenResponse.body);
-          final accessToken = responseData['access_token'].replaceAll('"', '');
-          final refreshToken = responseData['refresh_token'];
-          final expiresIn =
-              responseData['expires_in']; // Expiry time in seconds
-
-          // Save tokens to SharedPreferences
           final prefs = await SharedPreferences.getInstance();
-          await prefs.setString('accessToken', accessToken);
-          await prefs.setString('refreshToken', refreshToken ?? '');
-          await prefs.setString(
-              'tokenExpiry',
-              DateTime.now().add(Duration(seconds: expiresIn)).toString());
+          // A fresh login must not keep a refresh token from an old session.
+          await prefs.remove('refreshToken');
+          final accessToken = await AuthSession.saveTokens(responseData);
 
           // Fetch user information
           final userInfoResponse = await http.get(
@@ -108,10 +101,20 @@ class ApiService {
     }
   }
 
-  // Fetch user-specific data after successful login
+  // Fetch user-specific data after successful login. Each fetch runs even if
+  // another fails, and a failure never blocks login: the user can pull later.
   static Future<void> fetchUserSpecificData() async {
-    await SyncManager.fetchAndStoreWarehousesAndCompanies();
-    await SyncManager.fetchAndStoreScanReferenceMasters();
-    await SyncManager.fetchAndStoreStockTakeSettings();
+    final fetches = [
+      SyncManager.fetchAndStoreWarehousesAndCompanies,
+      SyncManager.fetchAndStoreScanReferenceMasters,
+      SyncManager.fetchAndStoreStockTakeSettings,
+    ];
+    for (final fetch in fetches) {
+      try {
+        await fetch();
+      } catch (e) {
+        print("Post-login fetch failed: $e");
+      }
+    }
   }
 }

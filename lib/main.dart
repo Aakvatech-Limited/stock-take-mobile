@@ -22,24 +22,23 @@ void startPeriodicSync() {
   _syncTimer = Timer.periodic(const Duration(minutes: 15), (timer) async {
     print("Starting periodic sync at ${DateTime.now()}");
 
-    // Fetch data from server
-    try {
-      await SyncManager.fetchAndStoreWarehousesAndCompanies();
-      await SyncManager.fetchAndStoreScanReferenceMasters();
-      await SyncManager.fetchAndStoreStockTakeSettings();
-      await SyncManager.syncFromServer();
-      print("Fetch sync completed at ${DateTime.now()}");
-    } catch (e) {
-      print("Error during fetch sync: $e");
+    // Each step refreshes the token itself when online. Steps run even if
+    // an earlier one fails; offline or expired sessions are simply skipped.
+    final steps = [
+      SyncManager.fetchAndStoreWarehousesAndCompanies,
+      SyncManager.fetchAndStoreScanReferenceMasters,
+      SyncManager.fetchAndStoreStockTakeSettings,
+      SyncManager.syncFromServer,
+      SyncManager.syncToServer,
+    ];
+    for (final step in steps) {
+      try {
+        await step();
+      } catch (e) {
+        print("Periodic sync step failed: $e");
+      }
     }
-
-    // Post data to server
-    try {
-      await SyncManager.syncToServer();
-      print("Post sync completed at ${DateTime.now()}");
-    } catch (e) {
-      print("Error during post sync: $e");
-    }
+    print("Periodic sync finished at ${DateTime.now()}");
   });
 
   print("Periodic sync scheduled every 15 minutes");

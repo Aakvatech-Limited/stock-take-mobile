@@ -9,6 +9,7 @@ import 'package:stock_count/constants/theme.dart';
 import 'package:stock_count/utilis/change_notifier.dart';
 import 'package:stock_count/utilis/sync_manager.dart';
 import 'package:stock_count/utilis/dialog_messages.dart';
+import 'package:stock_count/utilis/quantity.dart';
 import 'package:sunmi_scanner/sunmi_scanner.dart';
 
 class CalculatorCard extends StatefulWidget {
@@ -383,14 +384,19 @@ class _CalculatorCardState extends State<CalculatorCard>
         Provider.of<StockTakeNotifier>(context, listen: false);
     final scanValue = scannedCodeController.text.trim();
     final scanReferenceMode = stockTakeNotifier.scanReferenceMode.trim();
-    int quantity = int.tryParse(qtyController.text) ?? 0;
+    final quantity = parseQuantity(qtyController.text);
 
     if (widget.database == null) {
       print("Database is null.");
       return;
     }
 
-    if (widget.entryId != 0 && scanValue.isNotEmpty && quantity > 0) {
+    if (scanValue.isNotEmpty && quantity == null) {
+      showErrorDialog(context, 'Enter a valid quantity greater than zero.');
+      return;
+    }
+
+    if (widget.entryId != 0 && scanValue.isNotEmpty && quantity != null) {
       if (scanReferenceMode == 'Serial No' && quantity != 1) {
         showErrorDialog(
           context,
@@ -670,7 +676,7 @@ class _CalculatorCardState extends State<CalculatorCard>
               ),
               prefixIcon: const Icon(Icons.numbers),
             ),
-            keyboardType: TextInputType.number,
+            keyboardType: quantityKeyboardType,
           ),
           const Spacer(),
           InkWell(

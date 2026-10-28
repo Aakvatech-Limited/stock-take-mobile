@@ -1,4 +1,4 @@
-import 'package:stock_count/config.dart';
+import 'package:stock_count/utilis/auth_session.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:sqflite/sqflite.dart';
@@ -8,8 +8,6 @@ import 'package:path/path.dart';
 import 'package:stock_count/utilis/db_schema.dart';
 
 class SyncManager {
-  // Use a method to get the base URL asynchronously
-  static Future<String> get _baseUrl async => await AppConfig.baseUrl;
   static Future<Database> getDatabase() async {
     var databasesPath = await getDatabasesPath();
     String path = join(databasesPath, 'stock_count.db');
@@ -60,21 +58,9 @@ class SyncManager {
     }
   }
 
-  // Sync to server without refreshing token automatically
+  // Pushes unsynced entries. Throws on network, session or server errors so
+  // callers can tell the user; the entries stay unsynced for the next try.
   static Future<void> syncToServer() async {
-    final prefs = await SharedPreferences.getInstance();
-    String? accessToken = prefs.getString('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
-
-    // Proceed only if token is still valid
-    if (accessToken == null ||
-        accessToken.isEmpty ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      print("Access token is either missing or expired. Sync aborted.");
-      return;
-    }
-
     Database db = await getDatabase();
     await _ensureSyncUuids(db);
 
@@ -156,14 +142,9 @@ class SyncManager {
           'entries': bulkData,
         };
 
-        final baseUrl = await _baseUrl;
-        var response = await http.post(
-          Uri.parse('$baseUrl/api/method/nex_bridge.api.stock_take.sync_entry'),
-          headers: {
-            'Content-Type': 'application/json',
-            'Authorization': 'Bearer $accessToken',
-          },
-          body: jsonEncode(postData),
+        var response = await AuthSession.post(
+          'nex_bridge.api.stock_take.sync_entry',
+          body: postData,
         );
 
         if (response.statusCode == 200) {
@@ -230,41 +211,25 @@ class SyncManager {
           }
         } else {
           print("Error during bulk sync: ${response.body}");
+          throw _serverError('Cloud sync', response);
         }
       } else {
         print("No unsynced entries found for sync.");
       }
     } catch (e) {
       print("Bulk sync to server failed: $e");
+      rethrow;
     }
   }
 
   // Revised syncFromServer method based on server_id
   static Future<void> syncFromServer() async {
-    final prefs = await SharedPreferences.getInstance();
-    String? accessToken = prefs.getString('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
-
-    // Proceed only if token is still valid
-    if (accessToken == null ||
-        accessToken.isEmpty ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      print("Access token is either missing or expired. Sync aborted.");
-      return;
-    }
-
     try {
       var postData = {'api_call_type': 'get_entries'};
 
-      final baseUrl = await _baseUrl;
-      var response = await http.post(
-        Uri.parse('$baseUrl/api/method/nex_bridge.api.stock_take.sync_entry'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-        body: jsonEncode(postData),
+      var response = await AuthSession.post(
+        'nex_bridge.api.stock_take.sync_entry',
+        body: postData,
       );
 
       if (response.statusCode == 200) {
@@ -424,9 +389,11 @@ class SyncManager {
         print("Fetch from server completed successfully.");
       } else {
         print("Error fetching from server: ${response.body}");
+        throw _serverError('Pulling entries', response);
       }
     } catch (e) {
       print("Fetch from server failed: $e");
+      rethrow;
     }
   }
 
@@ -454,27 +421,10 @@ class SyncManager {
   // cleared, so a transient failure never toggles the UI unexpectedly.
   static Future<void> fetchAndStoreStockTakeSettings() async {
     final prefs = await SharedPreferences.getInstance();
-    String? accessToken = prefs.getString('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
-
-    if (accessToken == null ||
-        accessToken.isEmpty ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      print("Access token is either missing or expired. Settings sync aborted.");
-      return;
-    }
 
     try {
-      final baseUrl = await _baseUrl;
-      var response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/method/nex_bridge.api.stock_take.get_stock_take_settings'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
+      var response = await AuthSession.post(
+          'nex_bridge.api.stock_take.get_stock_take_settings');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -495,36 +445,15 @@ class SyncManager {
     }
   }
 
-  // Method to fetch and store warehouses and companies in SharedPreferences
+  // Fetches warehouses and companies into SharedPreferences. The cached list
+  // is only replaced after a good response, so a failed pull while offline
+  // never leaves the device without warehouses.
   static Future<void> fetchAndStoreWarehousesAndCompanies() async {
     final prefs = await SharedPreferences.getInstance();
-    String? accessToken = prefs.getString('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
-
-    if (accessToken == null ||
-        accessToken.isEmpty ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      print("Access token is either missing or expired. Sync aborted.");
-      return;
-    }
-
-    // Clear previous data
-    await prefs.remove('warehouses_by_company');
-    await prefs.remove('companies');
-    print(
-        "Cleared previous warehouse and company data before fetching new ones.");
 
     try {
-      final baseUrl = await _baseUrl;
-      var response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/method/nex_bridge.api.stock_take.get_warehouses_grouped_by_company'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
+      var response = await AuthSession.post(
+          'nex_bridge.api.stock_take.get_warehouses_grouped_by_company');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -552,37 +481,22 @@ class SyncManager {
         }
       } else {
         print("Failed to fetch warehouses and companies: ${response.body}");
+        throw _serverError('Pulling warehouses', response);
       }
     } catch (e) {
       print("Error fetching warehouses and companies: $e");
+      rethrow;
     }
   }
 
-  // Method to fetch and store offline scan reference masters for Item/Batch/Serial modes
+  // Fetches offline scan reference masters for Item/Batch/Serial modes. Like
+  // warehouses, the cache is only replaced after a good response.
   static Future<void> fetchAndStoreScanReferenceMasters() async {
     final prefs = await SharedPreferences.getInstance();
-    String? accessToken = prefs.getString('accessToken');
-    DateTime? tokenExpiry = DateTime.tryParse(prefs.getString('tokenExpiry') ?? '');
-
-    if (accessToken == null ||
-        accessToken.isEmpty ||
-        tokenExpiry == null ||
-        DateTime.now().isAfter(tokenExpiry)) {
-      print("Access token is either missing or expired. Sync aborted.");
-      return;
-    }
 
     try {
-      await prefs.remove('scan_reference_masters');
-      final baseUrl = await _baseUrl;
-      var response = await http.post(
-        Uri.parse(
-            '$baseUrl/api/method/nex_bridge.api.stock_take.get_scan_reference_masters'),
-        headers: {
-          'Content-Type': 'application/json',
-          'Authorization': 'Bearer $accessToken',
-        },
-      );
+      var response = await AuthSession.post(
+          'nex_bridge.api.stock_take.get_scan_reference_masters');
 
       if (response.statusCode == 200) {
         final data = jsonDecode(response.body);
@@ -604,14 +518,15 @@ class SyncManager {
           await prefs.setString('scan_reference_master_scope',
               (payload['scope'] ?? 'unknown').toString());
         } else {
-          await prefs.remove('scan_reference_masters');
           print("Unexpected response format for scan reference masters.");
         }
       } else {
         print("Failed to fetch scan reference masters: ${response.body}");
+        throw _serverError('Pulling masters', response);
       }
     } catch (e) {
       print("Error fetching scan reference masters: $e");
+      rethrow;
     }
   }
 
@@ -663,4 +578,7 @@ class SyncManager {
       };
     }
   }
+
+  static Exception _serverError(String action, http.Response response) =>
+      Exception('$action failed (server returned ${response.statusCode}).');
 }
