@@ -10,9 +10,15 @@
 
 You can download the latest APK directly from this repository:
 
-[**Download Stock Take APK (v1.1.0)**](https://github.com/Aakvatech-Limited/stock-take-mobile/raw/main/Stock-Take-Android.apk)
+[**Download Stock Take APK (v1.1.1)**](https://github.com/Aakvatech-Limited/stock-take-mobile/raw/main/Stock-Take-Android.apk)
 
-**Current version:** 1.1.0 (build 2). You can install it over an older version; your saved entries are kept.
+**Current version:** 1.1.1 (build 3). You can install it over an older version; your saved entries are kept.
+
+#### What's new in 1.1.1
+
+- **No more missing items after sync:** Items that were counted after an earlier push are now always sent. Before, a pull during a count could mark the entry as synced while some items were still only on the phone. These items are sent on the next sync after you update; you do not need to count them again.
+- **Correct sync icon:** An entry shows as synced only when all of its items are on the server.
+- **Safer pull:** A pull no longer replaces counts on the phone that were not pushed yet.
 
 #### What's new in 1.1.0
 

@@ -61,7 +61,9 @@ class _CenterBoxState extends State<CenterBox> {
               s.posting_date, 
               s.posting_time, 
               s.scan_reference_mode,
-              s.synced, 
+              -- Not synced while any item is still waiting to be pushed.
+              CASE WHEN s.synced = 0 OR SUM(i.synced = 0) > 0
+                   THEN 0 ELSE 1 END AS synced,
               COUNT(i.id) AS item_count
             FROM StockCountEntry AS s
             LEFT JOIN StockCountEntryItem AS i ON s.id = i.stock_count_entry_id
