@@ -24,12 +24,13 @@ void startPeriodicSync() {
 
     // Each step refreshes the token itself when online. Steps run even if
     // an earlier one fails; offline or expired sessions are simply skipped.
+    // Push first, so local counts reach the server before anything is pulled.
     final steps = [
+      SyncManager.syncToServer,
       SyncManager.fetchAndStoreWarehousesAndCompanies,
       SyncManager.fetchAndStoreScanReferenceMasters,
       SyncManager.fetchAndStoreStockTakeSettings,
       SyncManager.syncFromServer,
-      SyncManager.syncToServer,
     ];
     for (final step in steps) {
       try {

@@ -65,15 +65,20 @@ class SyncManager {
     await _ensureSyncUuids(db);
 
     try {
-      // Fetch only unsynced entries (synced = 0)
-      List<Map<String, dynamic>> unsyncedEntries = await db.query(
-        'StockCountEntry',
-        where: 'synced = ?',
-        whereArgs: [0],
-      );
+      // The entry flag alone is not enough: an item scanned while a push was
+      // in flight leaves its entry marked synced. Any unsynced item counts.
+      List<Map<String, dynamic>> unsyncedEntries = await db.rawQuery('''
+        SELECT * FROM StockCountEntry
+        WHERE synced = 0
+           OR id IN (SELECT stock_count_entry_id
+                     FROM StockCountEntryItem WHERE synced = 0)
+      ''');
 
       if (unsyncedEntries.isNotEmpty) {
         List<Map<String, dynamic>> bulkData = [];
+        // Qty sent per item, so an item re-counted during the push is not
+        // marked synced with a quantity the server never received.
+        final sentQtyByUuid = <String, Object?>{};
 
         for (var entry in unsyncedEntries) {
           // Fetch associated unsynced items for each entry
@@ -122,6 +127,8 @@ class SyncManager {
                 barcodePayload = rawScanValue;
               }
 
+              sentQtyByUuid[(item['sync_uuid'] ?? '').toString()] =
+                  item['qty'];
               return {
                 'local_id': (item['sync_uuid'] ?? '').toString(),
                 'scan_reference_mode': mode,
@@ -196,8 +203,8 @@ class SyncManager {
                     'server_id': syncedItem['server_id'],
                     'last_sync_time': DateTime.now().toIso8601String(),
                   },
-                  where: 'sync_uuid = ?',
-                  whereArgs: [syncedItemUuid],
+                  where: 'sync_uuid = ? AND qty = ?',
+                  whereArgs: [syncedItemUuid, sentQtyByUuid[syncedItemUuid]],
                 );
               }
             }
@@ -299,6 +306,11 @@ class SyncManager {
                 },
               );
             }
+          } else if (await _hasUnsyncedChanges(
+              db, localEntry.first['id'] as int)) {
+            // The server copy is older than the phone. Keep the local count;
+            // the next push sends it.
+            print("Skipped pulling entry $serverId: it has unsynced changes.");
           } else {
             await db.update(
               'StockCountEntry',
@@ -395,6 +407,17 @@ class SyncManager {
       print("Fetch from server failed: $e");
       rethrow;
     }
+  }
+
+  static Future<bool> _hasUnsyncedChanges(Database db, int entryId) async {
+    final rows = await db.rawQuery('''
+      SELECT 1 FROM StockCountEntry WHERE id = ? AND synced = 0
+      UNION ALL
+      SELECT 1 FROM StockCountEntryItem
+      WHERE stock_count_entry_id = ? AND synced = 0
+      LIMIT 1
+    ''', [entryId, entryId]);
+    return rows.isNotEmpty;
   }
 
   // Helper method to get local entry id by server_id
